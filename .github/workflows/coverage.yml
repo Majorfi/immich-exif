@@ -1,0 +1,31 @@
+name: coverage
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-and-coverage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+
+      - name: Run tests
+        working-directory: src
+        run: go test ./...
+
+      - name: Coverage gate
+        working-directory: src
+        run: |
+          go test ./... -coverprofile=coverage.out
+          totalCoverage=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%","",$3); print $3}')
+          minimumCoverage=80.0
+          awk -v totalCoverage="$totalCoverage" -v minimumCoverage="$minimumCoverage" 'BEGIN { if (totalCoverage+0 < minimumCoverage+0) exit 1 }'
+          echo "Coverage ${totalCoverage}% (minimum ${minimumCoverage}%)"

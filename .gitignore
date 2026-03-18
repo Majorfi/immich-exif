@@ -1,0 +1,8 @@
+.env
+immich-exif
+.local
+.immich-exif-tmp
+coverage.out
+export/
+src/export/
+immich-openapi-specs.json
