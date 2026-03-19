@@ -1,5 +1,7 @@
 # immich-exif
 
+## /!\ WORK IN PROGRESS. NOT PROPERLY TESTED YET /!\
+
 A CLI tool that synchronizes metadata from an [Immich](https://immich.app) photo server back into the original files.
 
 Immich stores rich metadata (GPS, descriptions, ratings, camera info, dates) in its database, but this metadata isn't always embedded in the file itself. This tool bridges that gap by downloading each asset, embedding the missing tags via `exiftool`, and re-uploading the modified file.
