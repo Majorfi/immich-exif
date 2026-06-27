@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://immich-exif.app"),
   title: "immich-exif: write your Immich metadata back into your files",
   description:
-    "A CLI that takes the GPS, dates, descriptions and ratings your self-hosted Immich server knows and embeds them into the original photos and videos with exiftool. Dry-run by default-safe, checksum-verified, open source.",
+    "Write the GPS, dates, descriptions and ratings your self-hosted Immich server knows back into your original photos and videos with exiftool. Open source.",
   alternates: { canonical: "/" },
   keywords: [
     "Immich",

@@ -1,0 +1,25 @@
+# immich-exif
+
+> A command-line tool that writes the metadata your self-hosted Immich photo server knows (GPS, dates, descriptions, ratings, camera info) back into the original photo and video files using exiftool, so the metadata travels with the file instead of staying locked in the server's database.
+
+immich-exif is free and open source. It is for people running Immich who want their original files to be self-describing. It is safe by design: the corrected file is uploaded and (optionally) checksum-verified before the old asset is deleted, and a dry-run mode shows every change as a diff without writing anything.
+
+## What it writes back
+- GPS latitude and longitude (with hemisphere refs), to EXIF and XMP
+- DateTimeOriginal with the correct timezone offset
+- Descriptions / captions across EXIF, XMP and IPTC
+- Star ratings (Rating, RatingPercent, XMP-xmp:Rating)
+- Camera make, model and lens model
+- Video metadata for mp4, mov and m4v containers
+
+## Key facts
+- Stack: a Go CLI that shells out to exiftool (and ffprobe for video)
+- Safety: upload-before-delete, optional checksum verification (-verify-upload), -dry-run preview, and an idempotent cache that skips assets already in sync
+- Compatibility: works with both legacy and Immich 3.x APIs; -immich-api auto-detects the server version
+- Not affiliated with Immich; it talks to Immich's public REST API
+
+## Links
+- Home: https://immich-exif.app
+- Source code: https://github.com/Majorfi/immich-exif
+- Immich: https://immich.app
+- exiftool: https://exiftool.org

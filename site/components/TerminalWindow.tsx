@@ -35,7 +35,7 @@ export default function TerminalWindow() {
         <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
         <span className="h-3 w-3 rounded-full bg-[#28c840]" />
         <span className="ml-2 font-mono text-[12px] text-white/40">
-          immich-exif — dry-run
+          immich-exif
         </span>
       </div>
 
@@ -43,14 +43,14 @@ export default function TerminalWindow() {
       <div className="overflow-x-auto px-5 py-4 font-mono text-[12.5px] leading-[1.7]">
         <p className="whitespace-nowrap text-white/55">
           <span className="text-[#28c840]">$</span> immich-exif{" "}
-          <span className="text-[#1e9eff]">-dry-run</span> 60566630-…
+          <span className="text-[#1e9eff]">-y</span> 60566630-…
         </p>
         <p className="mt-2 whitespace-nowrap text-white/85">
           <span className="text-white/40">=&gt;</span> 60566630 |{" "}
           IMG_20180523_200432.jpg
         </p>
         <p className="whitespace-nowrap text-white/55">
-          {"   "}12 EXIF mismatches found:
+          {"   "}embedding 12 missing tags into the file:
         </p>
         {ROWS.map((row) => (
           <p key={row.tag} className="whitespace-nowrap">
@@ -65,8 +65,10 @@ export default function TerminalWindow() {
           </p>
         ))}
         <p className="mt-2 whitespace-nowrap">
-          <span className="text-white/40">{"   "}dry-run:</span>{" "}
-          <span className="text-[#28c840]">nothing written ✓</span>
+          <span className="text-[#28c840]">{"   "}✓</span>{" "}
+          <span className="text-white/70">
+            embedded · re-uploaded · verified
+          </span>
         </p>
       </div>
     </div>

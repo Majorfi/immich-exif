@@ -15,7 +15,7 @@ const WRITES = [
     name: "Dates & Timezones",
     accent: "#ffb400",
     description:
-      "DateTimeOriginal with the right offset — the exact moment your camera should have recorded, timezone included.",
+      "DateTimeOriginal with the right offset: the exact moment your camera should have recorded, timezone included.",
   },
   {
     name: "Descriptions",
@@ -52,7 +52,7 @@ const SAFETY = [
   {
     title: "Verify the bytes",
     description:
-      "With -verify-upload, the new asset is re-fetched and its checksum compared to what you sent. A mismatch refuses to delete the original — fail-safe by construction.",
+      "With -verify-upload, the new asset is re-fetched and its checksum compared to what you sent. A mismatch refuses to delete the original. A bad upload can't cost you the photo.",
   },
   {
     title: "Dry-run anything",
@@ -102,7 +102,7 @@ const STEPS = [
 const FAQ = [
   {
     q: "Is it free?",
-    a: "Yes. immich-exif is open source — build it, go install it, or grab a release binary. No paywall, no nag screens.",
+    a: "Yes. immich-exif is open source: build it yourself, go install it, or grab a release binary. No paywall.",
   },
   {
     q: "Does it touch my originals?",
@@ -110,7 +110,7 @@ const FAQ = [
   },
   {
     q: "Can it lose my photos?",
-    a: "No. The new asset is uploaded — and optionally checksum-verified with -verify-upload — before the old one is deleted, so the worst case is a duplicate, never a loss. Deletes go through the same API Immich's own trash uses. -dry-run lets you see every change first.",
+    a: "No. The new asset is uploaded (and optionally checksum-verified with -verify-upload) before the old one is deleted, so the worst case is a duplicate, never a loss. Deletes go through the same API Immich's own trash uses, and -dry-run lets you see every change first.",
   },
   {
     q: "What do I need?",
@@ -223,7 +223,7 @@ export default function Home() {
           >
             Immich
           </a>{" "}
-          server knows where, when and what — but the original files often
+          server knows where, when and what. The original files usually
           don&apos;t. immich-exif reads that metadata and writes it back into
           the photo itself, so it travels with the file.
         </p>
@@ -268,7 +268,7 @@ export default function Home() {
             Everything Immich knows, in the file
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-center text-[15px] text-fog">
-            Immich stores rich metadata in its database. immich-exif diffs it
+            Immich keeps all that metadata in its database. immich-exif diffs it
             against what&apos;s actually in each file and embeds only
             what&apos;s missing.
           </p>
@@ -313,12 +313,12 @@ export default function Home() {
               >
                 exiftool
               </a>
-              , so the photo is self-describing — anywhere it travels.
+              , so the photo is self-describing, anywhere it travels.
             </p>
             <ul className="mt-6 space-y-3 text-[14px] text-fog">
               {[
                 "Reads the tags already in the file, writes only what's missing",
-                "Skips assets whose metadata already matches — idempotent by design",
+                "Skips assets whose metadata already matches, never rewriting a file twice",
                 "Downloads to a temp dir, never overwrites a file outside it",
               ].map((line) => (
                 <li key={line} className="flex gap-3">
@@ -449,8 +449,8 @@ export default function Home() {
           Your metadata, everywhere your photos go.
         </h2>
         <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-fog">
-          Embed it once and the GPS, dates and captions ride along in the file —
-          no database required to read them back.
+          Embed it once and the GPS, dates and captions ride along in the file.
+          No database required to read them back.
         </p>
         <div className="mt-8 flex flex-col items-center gap-3">
           <a
