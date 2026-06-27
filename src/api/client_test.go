@@ -121,43 +121,90 @@ func TestNewRequestInvalidURL(t *testing.T) {
 	}
 }
 
-func TestPingSuccess(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestIsV3Version(t *testing.T) {
+	cases := []struct {
+		version string
+		want    bool
+	}{
+		{"3.0.0-rc.3", true},
+		{"v3.1.0", true},
+		{"3", true},
+		{"4.2.0", true},
+		{"2.9.9", false},
+		{"1.119.0", false},
+		{"", false},
+		{"garbage", false},
+	}
+	for _, tc := range cases {
+		if got := isV3Version(tc.version); got != tc.want {
+			t.Fatalf("isV3Version(%q) = %v, want %v", tc.version, got, tc.want)
+		}
+	}
+}
+
+func aboutServer(version string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/server/about" {
-			t.Fatalf("unexpected path: %s", r.URL.Path)
+			http.Error(w, "unexpected path", http.StatusNotFound)
+			return
 		}
-		if r.Header.Get("x-api-key") == "" {
-			t.Fatal("expected x-api-key header")
-		}
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"version":"1.0"}`))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"version":"` + version + `"}`))
 	}))
+}
+
+func TestResolveAPIModeAutoDetectsV3(t *testing.T) {
+	server := aboutServer("3.0.0-rc.3")
 	defer server.Close()
 
-	c := NewImmichClient(server.URL, "my-key")
-	if err := c.Ping(); err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	c := NewImmichClient(server.URL, "key")
+	if err := c.ResolveAPIMode("auto"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !c.apiV3 {
+		t.Fatal("expected apiV3=true for a 3.x server")
 	}
 }
 
-func TestPingFailsOnUnauthorized(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-	}))
+func TestResolveAPIModeAutoDetectsLegacy(t *testing.T) {
+	server := aboutServer("1.119.0")
 	defer server.Close()
 
-	c := NewImmichClient(server.URL, "bad-key")
-	err := c.Ping()
-	if err == nil {
-		t.Fatal("expected error for unauthorized")
+	c := NewImmichClient(server.URL, "key")
+	if err := c.ResolveAPIMode("auto"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if c.apiV3 {
+		t.Fatal("expected apiV3=false for a 1.x server")
 	}
 }
 
-func TestPingFailsOnBadURL(t *testing.T) {
+func TestResolveAPIModeOverridesIgnoreVersion(t *testing.T) {
+	legacyServer := aboutServer("1.0.0")
+	defer legacyServer.Close()
+	cV3 := NewImmichClient(legacyServer.URL, "key")
+	if err := cV3.ResolveAPIMode("v3"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cV3.apiV3 {
+		t.Fatal("v3 override must win over a 1.x version")
+	}
+
+	v3Server := aboutServer("3.0.0")
+	defer v3Server.Close()
+	cLegacy := NewImmichClient(v3Server.URL, "key")
+	if err := cLegacy.ResolveAPIMode("legacy"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cLegacy.apiV3 {
+		t.Fatal("legacy override must win over a 3.x version")
+	}
+}
+
+func TestResolveAPIModeFailsOnUnreachableServer(t *testing.T) {
 	c := NewImmichClient("http://localhost:1", "key")
-	err := c.Ping()
-	if err == nil {
-		t.Fatal("expected error for unreachable server")
+	if err := c.ResolveAPIMode("legacy"); err == nil {
+		t.Fatal("expected connectivity error")
 	}
 }
 

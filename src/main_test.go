@@ -1047,6 +1047,23 @@ func TestParseConfigRejectsMissingSelector(t *testing.T) {
 	}
 }
 
+func TestParseConfigRejectsBlankAlbum(t *testing.T) {
+	defer setupConfigTest([]string{
+		"immich-exif",
+		"-url", "https://example.com",
+		"-api-key", "test-key",
+		"-album", "  ",
+	})()
+
+	_, err := parseConfig()
+	if err == nil {
+		t.Fatal("expected error for blank album")
+	}
+	if !strings.Contains(err.Error(), "album value cannot be empty") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestParseConfigRejectsCombinedSelectors(t *testing.T) {
 	defer setupConfigTest([]string{
 		"immich-exif",

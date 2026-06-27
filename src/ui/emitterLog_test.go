@@ -205,6 +205,45 @@ func TestEmitResultDoesNotPanic(t *testing.T) {
 	})
 }
 
+func TestDecodeKeyMapsExplicitKeys(t *testing.T) {
+	cases := []struct {
+		b    byte
+		want model.DiffAction
+	}{
+		{'y', model.ActionConfirm},
+		{'Y', model.ActionConfirm},
+		{'\r', model.ActionConfirm},
+		{'\n', model.ActionConfirm},
+		{'s', model.ActionSkip},
+		{'S', model.ActionSkip},
+		{'n', model.ActionSkip},
+		{'q', model.ActionQuit},
+		{'Q', model.ActionQuit},
+		{3, model.ActionQuit},
+		{4, model.ActionQuit},
+	}
+
+	for _, tc := range cases {
+		action, ok := decodeKey(tc.b)
+		if !ok {
+			t.Fatalf("byte %q should be recognized", rune(tc.b))
+		}
+		if action != tc.want {
+			t.Fatalf("byte %q: expected action %d, got %d", rune(tc.b), tc.want, action)
+		}
+	}
+}
+
+func TestDecodeKeyIgnoresEscapeSequenceBytes(t *testing.T) {
+	// Arrow/Home/End/F-keys arrive as multi-byte sequences led by ESC (27).
+	// None of those bytes must be read as quit and silently cancel the batch.
+	for _, b := range []byte{27, '[', 'A', 'B', 'C', 'D', 'H', 'F', 'O'} {
+		if action, ok := decodeKey(b); ok {
+			t.Fatalf("byte %d should be ignored, got recognized action %d", b, action)
+		}
+	}
+}
+
 func TestEmitDiffInteractiveReturnsQuitOnNonTerminal(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {

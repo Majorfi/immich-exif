@@ -69,15 +69,6 @@ func (c *ImmichClient) UploadAsset(filePath string, asset *model.AssetResponse) 
 	w := multipart.NewWriter(pw)
 	contentType := w.FormDataContentType()
 
-	deviceAssetID := asset.DeviceAssetID
-	if deviceAssetID == "" {
-		deviceAssetID = "exif-merger-" + asset.ID
-	}
-	deviceID := asset.DeviceID
-	if deviceID == "" {
-		deviceID = "exif-merger"
-	}
-
 	req, err := c.newRequest(http.MethodPost, "/assets", pr)
 	if err != nil {
 		pw.Close()
@@ -102,13 +93,23 @@ func (c *ImmichClient) UploadAsset(filePath string, asset *model.AssetResponse) 
 			return
 		}
 
-		if err := w.WriteField("deviceAssetId", deviceAssetID); err != nil {
-			writeErr = err
-			return
-		}
-		if err := w.WriteField("deviceId", deviceID); err != nil {
-			writeErr = err
-			return
+		if !c.apiV3 {
+			deviceAssetID := asset.DeviceAssetID
+			if deviceAssetID == "" {
+				deviceAssetID = "exif-merger-" + asset.ID
+			}
+			deviceID := asset.DeviceID
+			if deviceID == "" {
+				deviceID = "exif-merger"
+			}
+			if err := w.WriteField("deviceAssetId", deviceAssetID); err != nil {
+				writeErr = err
+				return
+			}
+			if err := w.WriteField("deviceId", deviceID); err != nil {
+				writeErr = err
+				return
+			}
 		}
 		if err := w.WriteField("fileCreatedAt", asset.FileCreatedAt.Format(time.RFC3339)); err != nil {
 			writeErr = err

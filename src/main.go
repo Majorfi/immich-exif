@@ -38,7 +38,7 @@ func main() {
 
 	client := api.NewImmichClient(cfg.URL, cfg.APIKey)
 
-	if err := client.Ping(); err != nil {
+	if err := client.ResolveAPIMode(cfg.ImmichAPI); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: cannot reach Immich server: %v\n", err)
 		os.Exit(1)
 	}
@@ -101,7 +101,7 @@ func main() {
 		return
 	}
 
-	uploader := &process.ModernUploader{Client: client, ResolveDuplicate: cfg.ResolveDuplicate}
+	uploader := &process.ModernUploader{Client: client, ResolveDuplicate: cfg.ResolveDuplicate, VerifyUpload: cfg.VerifyUpload}
 
 	if cfg.ExportDir != "" {
 		cfg.ExportDir = resolveExportDir(cfg)

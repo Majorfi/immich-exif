@@ -23,6 +23,7 @@ type UploadOutcome struct {
 type ModernUploader struct {
 	Client           *api.ImmichClient
 	ResolveDuplicate bool
+	VerifyUpload     bool
 }
 
 func (u *ModernUploader) Upload(filePath string, asset *model.AssetResponse, emitter model.EventEmitter) (UploadOutcome, error) {
@@ -48,7 +49,7 @@ func (u *ModernUploader) Upload(filePath string, asset *model.AssetResponse, emi
 	if status == "duplicate" {
 		if u.ResolveDuplicate && newID != asset.ID {
 			emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Duplicate detected. Resolving by moving associations to %s and deleting old asset...", newID)})
-			if err := u.finalizeReplacement(asset, newID, emitter); err != nil {
+			if err := u.finalizeReplacement(filePath, asset, newID, emitter); err != nil {
 				return UploadOutcome{}, err
 			}
 			return UploadOutcome{
@@ -82,14 +83,21 @@ func (u *ModernUploader) Upload(filePath string, asset *model.AssetResponse, emi
 	}
 
 	emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("New asset ID: %s", newID)})
-	if err := u.finalizeReplacement(asset, newID, emitter); err != nil {
+	if err := u.finalizeReplacement(filePath, asset, newID, emitter); err != nil {
 		return UploadOutcome{}, err
 	}
 
 	return UploadOutcome{NewID: newID, Cacheable: true}, nil
 }
 
-func (u *ModernUploader) finalizeReplacement(asset *model.AssetResponse, targetID string, emitter model.EventEmitter) error {
+func (u *ModernUploader) finalizeReplacement(filePath string, asset *model.AssetResponse, targetID string, emitter model.EventEmitter) error {
+	if u.VerifyUpload {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Verifying uploaded asset %s checksum...", model.ShortID(targetID))})
+		if err := verifyUploadedChecksum(u.Client, filePath, targetID); err != nil {
+			return fmt.Errorf("upload verification failed (old asset %s NOT deleted, new asset %s left in place): %w", model.ShortID(asset.ID), model.ShortID(targetID), err)
+		}
+	}
+
 	emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Copying associations from %s to %s...", model.ShortID(asset.ID), model.ShortID(targetID))})
 	if err := u.Client.CopyAsset(asset.ID, targetID); err != nil {
 		return fmt.Errorf("copy associations failed (target asset %s exists but old %s NOT deleted): %w", targetID, asset.ID, err)

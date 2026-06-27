@@ -205,7 +205,7 @@ func maybeResolveDuplicatesNow(client *api.ImmichClient, cfg *model.Config, resu
 
 	fmt.Printf("\nRe-running unresolved duplicates with -resolve-duplicate (%d assets)\n", len(assetIDs))
 	resolveCfg := buildResolveDuplicateFollowUpConfig(cfg)
-	resolveUploader := &process.ModernUploader{Client: client, ResolveDuplicate: true}
+	resolveUploader := &process.ModernUploader{Client: client, ResolveDuplicate: true, VerifyUpload: cfg.VerifyUpload}
 	return runClassic(client, resolveUploader, resolveCfg, assetIDs)
 }
 

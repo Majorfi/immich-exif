@@ -5,13 +5,20 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
+
+	"github.com/majorfi/immich-exif/model"
 )
+
+const apiV3MajorVersion = 3
 
 type ImmichClient struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
+	apiV3      bool
 }
 
 func NewImmichClient(baseURL, apiKey string) *ImmichClient {
@@ -47,17 +54,49 @@ func (c *ImmichClient) doRequest(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-func (c *ImmichClient) Ping() error {
+func (c *ImmichClient) About() (*model.ServerAbout, error) {
 	req, err := c.newRequest(http.MethodGet, "/server/about", nil)
 	if err != nil {
-		return fmt.Errorf("ping: %w", err)
+		return nil, err
 	}
-	resp, err := c.doRequest(req)
+	req.Header.Set("Accept", "application/json")
+	var about model.ServerAbout
+	if err := c.doJSON(req, &about); err != nil {
+		return nil, err
+	}
+	return &about, nil
+}
+
+// ResolveAPIMode verifies connectivity and selects the API contract to use.
+// mode is "auto" (detect from server version), "legacy", or "v3".
+func (c *ImmichClient) ResolveAPIMode(mode string) error {
+	about, err := c.About()
 	if err != nil {
-		return fmt.Errorf("ping: %w", err)
+		return err
 	}
-	resp.Body.Close()
+	switch mode {
+	case "legacy":
+		c.apiV3 = false
+	case "v3":
+		c.apiV3 = true
+	default:
+		c.apiV3 = isV3Version(about.Version)
+	}
 	return nil
+}
+
+func isV3Version(version string) bool {
+	v := strings.TrimSpace(version)
+	v = strings.TrimPrefix(v, "v")
+	v = strings.TrimPrefix(v, "V")
+	if dot := strings.IndexByte(v, '.'); dot >= 0 {
+		v = v[:dot]
+	}
+	major, err := strconv.Atoi(v)
+	if err != nil {
+		return false
+	}
+	return major >= apiV3MajorVersion
 }
 
 func (c *ImmichClient) doJSON(req *http.Request, dest any) error {
