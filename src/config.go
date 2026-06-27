@@ -32,10 +32,12 @@ func parseConfig() (*model.Config, error) {
 
 	flag.StringVar(&cfg.URL, "url", os.Getenv("IMMICH_URL"), "Immich server URL (env: IMMICH_URL)")
 	flag.StringVar(&cfg.APIKey, "api-key", os.Getenv("IMMICH_API_KEY"), "API key (env: IMMICH_API_KEY)")
+	flag.StringVar(&cfg.ImmichAPI, "immich-api", "auto", "Immich API contract: auto (detect), legacy, or v3")
 	flag.IntVar(&cfg.Workers, "workers", 1, "Number of parallel workers")
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "Embed EXIF but skip re-upload")
 	flag.StringVar(&cfg.ExportDir, "export-dir", "", "Save files to directory instead of re-uploading")
 	flag.BoolVar(&cfg.Yes, "y", false, "Auto-confirm all changes")
+	flag.BoolVar(&cfg.VerifyUpload, "verify-upload", false, "Re-fetch and checksum-verify the uploaded asset before deleting the original")
 
 	flag.BoolVar(&cfg.TUI, "tui", false, "Interactive TUI mode")
 	flag.BoolVar(&cfg.ResolveDuplicate, "resolve-duplicate", false, "Resolve duplicate upload status by copying associations to duplicate asset and deleting old asset")
@@ -64,6 +66,18 @@ func parseConfig() (*model.Config, error) {
 
 	if cfg.All {
 		cfg.AllAlbums = true
+	}
+
+	for _, albumID := range cfg.AlbumIDs {
+		if strings.TrimSpace(albumID) == "" {
+			return nil, fmt.Errorf("--album value cannot be empty")
+		}
+	}
+
+	switch cfg.ImmichAPI {
+	case "auto", "legacy", "v3":
+	default:
+		return nil, fmt.Errorf("--immich-api must be one of: auto, legacy, v3")
 	}
 
 	if cfg.URL == "" {

@@ -105,13 +105,20 @@ func readSingleKey() (model.DiffAction, error) {
 		if _, err := os.Stdin.Read(buf); err != nil {
 			return model.ActionQuit, fmt.Errorf("read key: %w", err)
 		}
-		switch buf[0] {
-		case 'y', 'Y', '\r', '\n':
-			return model.ActionConfirm, nil
-		case 's', 'S', 'n', 'N':
-			return model.ActionSkip, nil
-		case 'q', 'Q', 27:
-			return model.ActionQuit, nil
+		if action, ok := decodeKey(buf[0]); ok {
+			return action, nil
 		}
 	}
+}
+
+func decodeKey(b byte) (model.DiffAction, bool) {
+	switch b {
+	case 'y', 'Y', '\r', '\n':
+		return model.ActionConfirm, true
+	case 's', 'S', 'n', 'N':
+		return model.ActionSkip, true
+	case 'q', 'Q', 3, 4:
+		return model.ActionQuit, true
+	}
+	return model.ActionQuit, false
 }

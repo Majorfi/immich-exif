@@ -8,6 +8,7 @@ type AssetResponse struct {
 	DeviceID         string    `json:"deviceId"`
 	OriginalFileName string    `json:"originalFileName"`
 	OriginalMimeType string    `json:"originalMimeType"`
+	Checksum         string    `json:"checksum"`
 	FileCreatedAt    time.Time `json:"fileCreatedAt"`
 	FileModifiedAt   time.Time `json:"fileModifiedAt"`
 	IsFavorite       bool      `json:"isFavorite"`
@@ -31,9 +32,14 @@ type ExifInfo struct {
 }
 
 type SearchMetadataRequest struct {
-	Page     int  `json:"page"`
-	Size     int  `json:"size"`
-	WithExif bool `json:"withExif,omitempty"`
+	Page     int      `json:"page"`
+	Size     int      `json:"size"`
+	WithExif bool     `json:"withExif"`
+	AlbumIDs []string `json:"albumIds,omitempty"`
+}
+
+type ServerAbout struct {
+	Version string `json:"version"`
 }
 
 type SearchMetadataResponse struct {
@@ -46,8 +52,9 @@ type SearchAssets struct {
 }
 
 type AlbumResponse struct {
-	ID     string          `json:"id"`
-	Assets []AssetResponse `json:"assets"`
+	ID         string          `json:"id"`
+	AssetCount int             `json:"assetCount"`
+	Assets     []AssetResponse `json:"assets"`
 }
 
 type CopyAssetsRequest struct {
@@ -107,12 +114,14 @@ func (s ResultStatus) String() string {
 }
 
 type Config struct {
-	URL       string
-	APIKey    string
-	Workers   int
-	DryRun    bool
-	ExportDir string
-	Yes       bool
+	URL          string
+	APIKey       string
+	ImmichAPI    string
+	Workers      int
+	DryRun       bool
+	ExportDir    string
+	Yes          bool
+	VerifyUpload bool
 
 	TUI                   bool
 	ResolveDuplicate      bool

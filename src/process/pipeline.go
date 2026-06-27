@@ -39,7 +39,11 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 		}
 	}()
 
-	filePath := filepath.Join(assetDir, asset.OriginalFileName)
+	safeName, err := safePathComponent("asset filename", asset.OriginalFileName)
+	if err != nil {
+		return fail("%v", err)
+	}
+	filePath := filepath.Join(assetDir, safeName)
 	if err := client.DownloadAsset(assetID, filePath); err != nil {
 		return fail("download: %v", err)
 	}
@@ -76,16 +80,24 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 		return fail("write exif: %v", err)
 	}
 
+	if cfg.DryRun {
+		return model.ProcessResult{AssetID: assetID, Status: model.StatusSuccess, Message: fmt.Sprintf("dry-run: %s", filePath)}
+	}
+
 	if cfg.ExportDir != "" {
 		albumIDs := cfg.ExportAlbumIDsByAsset[assetID]
 		if len(albumIDs) > 0 {
 			for _, albumID := range albumIDs {
-				albumDir := filepath.Join(cfg.ExportDir, albumID)
+				safeAlbumID, err := safePathComponent("album ID", albumID)
+				if err != nil {
+					return fail("export: %v", err)
+				}
+				albumDir := filepath.Join(cfg.ExportDir, safeAlbumID)
 				if err := os.MkdirAll(albumDir, 0755); err != nil {
 					return fail("export (%s): %v", albumID, err)
 				}
 
-				destPath := filepath.Join(albumDir, asset.OriginalFileName)
+				destPath := filepath.Join(albumDir, safeName)
 				if err := copyFile(filePath, destPath); err != nil {
 					return fail("export (%s): %v", albumID, err)
 				}
@@ -93,15 +105,11 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 			return model.ProcessResult{AssetID: assetID, Status: model.StatusSuccess, Message: fmt.Sprintf("exported to %d album folders", len(albumIDs))}
 		}
 
-		destPath := filepath.Join(cfg.ExportDir, asset.OriginalFileName)
+		destPath := filepath.Join(cfg.ExportDir, safeName)
 		if err := copyFile(filePath, destPath); err != nil {
 			return fail("export: %v", err)
 		}
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSuccess, Message: fmt.Sprintf("exported to %s", destPath)}
-	}
-
-	if cfg.DryRun {
-		return model.ProcessResult{AssetID: assetID, Status: model.StatusSuccess, Message: fmt.Sprintf("dry-run: %s", filePath)}
 	}
 
 	var uploadOutcome UploadOutcome
@@ -151,6 +159,14 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 		}
 	}
 	return model.ProcessResult{AssetID: assetID, Status: model.StatusSuccess, NewID: newID, Message: msg}
+}
+
+func safePathComponent(kind, value string) (string, error) {
+	base := filepath.Base(value)
+	if base != value || base == "." || base == ".." {
+		return "", fmt.Errorf("unsafe %s: %q", kind, value)
+	}
+	return base, nil
 }
 
 func copyFile(src, dst string) error {

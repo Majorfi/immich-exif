@@ -95,6 +95,44 @@ func TestDownloadAssetReturnsErrorOnFailure(t *testing.T) {
 	}
 }
 
+func TestUploadAssetV3OmitsDeviceFields(t *testing.T) {
+	var receivedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"new-id","status":"created"}`))
+	}))
+	defer server.Close()
+
+	filePath := filepath.Join(t.TempDir(), "photo.jpg")
+	if err := os.WriteFile(filePath, []byte("data"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	c := NewImmichClient(server.URL, "test-key")
+	c.apiV3 = true
+	asset := &model.AssetResponse{
+		ID:             "asset-id",
+		DeviceAssetID:  "device-asset",
+		DeviceID:       "device-1",
+		FileCreatedAt:  time.Now(),
+		FileModifiedAt: time.Now(),
+	}
+
+	if _, err := c.UploadAsset(filePath, asset); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	body := string(receivedBody)
+	if strings.Contains(body, `name="deviceAssetId"`) || strings.Contains(body, `name="deviceId"`) {
+		t.Fatal("v3 upload must not send deviceAssetId/deviceId fields")
+	}
+	if !strings.Contains(body, `name="fileCreatedAt"`) {
+		t.Fatal("expected fileCreatedAt still present in v3 upload")
+	}
+}
+
 func TestUploadAssetSendsMultipartForm(t *testing.T) {
 	var receivedContentType string
 	var receivedBody []byte

@@ -108,7 +108,7 @@ func TestSearchAssetsSuccess(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	result, err := c.SearchAssets(1, 10)
+	result, err := c.searchAssetsPage(1, 10, nil, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -201,6 +201,67 @@ func TestListAllAssetIDsDetectsInvalidNextPage(t *testing.T) {
 	_, _, err := c.ListAllAssetIDs(nil)
 	if err == nil {
 		t.Fatal("expected error for non-advancing nextPage")
+	}
+}
+
+func TestGetAlbumAssetsRejectsEmptyAlbumID(t *testing.T) {
+	c := NewImmichClient("http://example.com", "key")
+	if _, err := c.GetAlbumAssets("   "); err == nil {
+		t.Fatal("expected error for empty album ID")
+	}
+	c.apiV3 = true
+	if _, err := c.GetAlbumAssets(""); err == nil {
+		t.Fatal("expected error for empty album ID in v3 mode")
+	}
+}
+
+func TestGetAlbumAssetsV3UsesSearch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/search/metadata" {
+			t.Fatalf("v3 album lookup must use search/metadata, got: %s", r.URL.Path)
+		}
+		resp := model.SearchMetadataResponse{
+			Assets: model.SearchAssets{Items: []model.AssetResponse{{ID: "a1"}, {ID: "a2"}}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "key")
+	c.apiV3 = true
+	ids, err := c.GetAlbumAssets("album-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ids) != 2 || ids[0] != "a1" || ids[1] != "a2" {
+		t.Fatalf("expected [a1 a2], got %v", ids)
+	}
+}
+
+func TestGetAlbumAssetsLegacyFallsBackWhenAssetsOmitted(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/albums/album-1":
+			json.NewEncoder(w).Encode(model.AlbumResponse{ID: "album-1", AssetCount: 2})
+		case "/api/search/metadata":
+			json.NewEncoder(w).Encode(model.SearchMetadataResponse{
+				Assets: model.SearchAssets{Items: []model.AssetResponse{{ID: "a1"}, {ID: "a2"}}},
+			})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "key")
+	ids, err := c.GetAlbumAssets("album-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("expected fallback to return 2 IDs, got %d (%v)", len(ids), ids)
 	}
 }
 
@@ -398,7 +459,7 @@ func TestSearchAssetsReturnsErrorOnFailure(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	_, err := c.SearchAssets(1, 10)
+	_, err := c.searchAssetsPage(1, 10, nil, true)
 	if err == nil {
 		t.Fatal("expected error")
 	}

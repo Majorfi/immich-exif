@@ -30,6 +30,21 @@ func TestTUIModelResultEventTracksCompletedCount(t *testing.T) {
 	}
 }
 
+func TestTUIModelResultEventResetsAwaitingNextDiff(t *testing.T) {
+	m := newTestTUIModel(2)
+	m.awaitingNextDiff = true
+
+	m.Update(model.ResultEvent{Index: 1, Total: 2, Result: model.ProcessResult{AssetID: "a", Status: model.StatusSkipped}})
+	if m.awaitingNextDiff {
+		t.Fatal("expected awaitingNextDiff=false after ResultEvent")
+	}
+
+	m.Update(model.ProgressEvent{AssetID: "b", Step: "Downloading"})
+	if m.current.Step != "Downloading" {
+		t.Fatalf("expected progress to render after a result, got step %q", m.current.Step)
+	}
+}
+
 func TestTUIModelDiffConfirmFlow(t *testing.T) {
 	m := newTestTUIModel(1)
 

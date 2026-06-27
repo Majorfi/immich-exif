@@ -18,11 +18,12 @@ type AssetSelectionStats struct {
 	StateSkipped              int
 }
 
-func (c *ImmichClient) SearchAssets(page, size int) (*model.SearchAssets, error) {
+func (c *ImmichClient) searchAssetsPage(page, size int, albumIDs []string, withExif bool) (*model.SearchAssets, error) {
 	body := model.SearchMetadataRequest{
 		Page:     page,
 		Size:     size,
-		WithExif: true,
+		WithExif: withExif,
+		AlbumIDs: albumIDs,
 	}
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
@@ -43,19 +44,40 @@ func (c *ImmichClient) SearchAssets(page, size int) (*model.SearchAssets, error)
 	return &resp.Assets, nil
 }
 
-func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool) ([]string, AssetSelectionStats, error) {
-	var allIDs []string
-	stats := AssetSelectionStats{}
+func (c *ImmichClient) forEachSearchPage(albumIDs []string, withExif bool, handle func([]model.AssetResponse)) error {
 	page := 1
 	pageSize := 1000
 
 	for {
-		result, err := c.SearchAssets(page, pageSize)
+		result, err := c.searchAssetsPage(page, pageSize, albumIDs, withExif)
 		if err != nil {
-			return nil, AssetSelectionStats{}, fmt.Errorf("search page %d: %w", page, err)
+			return fmt.Errorf("search page %d: %w", page, err)
 		}
 
-		for _, asset := range result.Items {
+		handle(result.Items)
+
+		nextPage, done, err := parseNextPage(result.NextPage)
+		if err != nil {
+			return fmt.Errorf("invalid nextPage: %w", err)
+		}
+		if done {
+			break
+		}
+		if nextPage <= page {
+			return fmt.Errorf("invalid nextPage %d after page %d", nextPage, page)
+		}
+		page = nextPage
+	}
+
+	return nil
+}
+
+func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool) ([]string, AssetSelectionStats, error) {
+	var allIDs []string
+	stats := AssetSelectionStats{}
+
+	err := c.forEachSearchPage(nil, true, func(items []model.AssetResponse) {
+		for _, asset := range items {
 			if model.IsUnsupportedVideoAsset(asset) {
 				stats.UnsupportedVideoSkipped++
 				continue
@@ -70,18 +92,9 @@ func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool
 			}
 			allIDs = append(allIDs, asset.ID)
 		}
-
-		nextPage, done, err := parseNextPage(result.NextPage)
-		if err != nil {
-			return nil, AssetSelectionStats{}, fmt.Errorf("invalid nextPage: %w", err)
-		}
-		if done {
-			break
-		}
-		if nextPage <= page {
-			return nil, AssetSelectionStats{}, fmt.Errorf("invalid nextPage %d after page %d", nextPage, page)
-		}
-		page = nextPage
+	})
+	if err != nil {
+		return nil, AssetSelectionStats{}, err
 	}
 
 	return allIDs, stats, nil
@@ -126,6 +139,13 @@ func (c *ImmichClient) ListAlbumIDs() ([]string, error) {
 }
 
 func (c *ImmichClient) GetAlbumAssets(albumID string) ([]string, error) {
+	if strings.TrimSpace(albumID) == "" {
+		return nil, fmt.Errorf("empty album ID")
+	}
+	if c.apiV3 {
+		return c.searchAlbumAssetIDs(albumID)
+	}
+
 	req, err := c.newRequest(http.MethodGet, "/albums/"+albumID, nil)
 	if err != nil {
 		return nil, err
@@ -141,5 +161,25 @@ func (c *ImmichClient) GetAlbumAssets(albumID string) ([]string, error) {
 	for _, asset := range album.Assets {
 		ids = append(ids, asset.ID)
 	}
+	// A newer server omits inline assets from the album response; if the album
+	// reports assets but none were inlined, page them via the search endpoint.
+	if len(ids) == 0 && album.AssetCount > 0 {
+		return c.searchAlbumAssetIDs(albumID)
+	}
+	return ids, nil
+}
+
+func (c *ImmichClient) searchAlbumAssetIDs(albumID string) ([]string, error) {
+	var ids []string
+
+	err := c.forEachSearchPage([]string{albumID}, false, func(items []model.AssetResponse) {
+		for _, asset := range items {
+			ids = append(ids, asset.ID)
+		}
+	})
+	if err != nil {
+		return nil, fmt.Errorf("search album %s: %w", albumID, err)
+	}
+
 	return ids, nil
 }

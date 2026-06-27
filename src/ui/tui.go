@@ -115,6 +115,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.completed = len(m.results)
 		m.current = model.ProgressEvent{}
 		m.diff = nil
+		m.awaitingNextDiff = false
 
 	case model.AllDoneEvent:
 		m.done = true
