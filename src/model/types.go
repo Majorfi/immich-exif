@@ -34,7 +34,7 @@ type ExifInfo struct {
 type SearchMetadataRequest struct {
 	Page     int      `json:"page"`
 	Size     int      `json:"size"`
-	WithExif bool     `json:"withExif,omitempty"`
+	WithExif bool     `json:"withExif"`
 	AlbumIDs []string `json:"albumIds,omitempty"`
 }
 
