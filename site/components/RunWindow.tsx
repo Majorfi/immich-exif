@@ -6,17 +6,18 @@ type Line = {
 };
 
 const LINES: Line[] = [
-  { prompt: true, text: "go install github.com/Majorfi/immich-exif@latest" },
+  { prompt: true, text: "git clone https://github.com/Majorfi/immich-exif" },
+  { prompt: true, text: "cd immich-exif/src && go build -o immich-exif ." },
   { prompt: true, text: "export IMMICH_URL=https://photos.example.com" },
   { prompt: true, text: "export IMMICH_API_KEY=••••••••••••" },
   {
     prompt: true,
-    text: "immich-exif -dry-run <asset-id>",
+    text: "./immich-exif -dry-run <asset-id>",
     comment: "preview one, write nothing",
   },
   {
     prompt: true,
-    text: "immich-exif -y -all",
+    text: "./immich-exif -y -all",
     comment: "embed across the whole library",
   },
 ];

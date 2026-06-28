@@ -20,7 +20,7 @@ const TOC = [
   { id: "export", label: "Export mode" },
   { id: "cache", label: "Incremental cache" },
   { id: "safety", label: "Safety" },
-  { id: "ui", label: "Interface modes" },
+  { id: "ui", label: "Interactive mode" },
 ];
 
 const FLAGS = [
@@ -85,7 +85,6 @@ const FLAGS = [
     def: "false",
     desc: "Ignore the state cache and re-check every asset.",
   },
-  { flag: "-tui", def: "false", desc: "Full-screen terminal interface." },
 ];
 
 const TAGS = [
@@ -435,10 +434,10 @@ immich-exif -all                    # the whole library`}</Code>
           </section>
 
           <section className="space-y-4">
-            <H2 id="ui">Interface modes</H2>
+            <H2 id="ui">Interactive mode</H2>
             <p>
-              The default classic mode prints a diff per asset and waits for a
-              single keypress:
+              immich-exif prints a diff per asset and waits for a single
+              keypress:
             </p>
             <Code>{`[1/5] 2 EXIF mismatch found for IMG_1234.jpg:
     + OffsetTimeOriginal  (none)  -> +01:00
@@ -446,10 +445,9 @@ immich-exif -all                    # the whole library`}</Code>
 
 [y] confirm  [s] skip  [q] quit:`}</Code>
             <p>
-              No Enter needed. <span className="kbd">-tui</span> gives a
-              full-screen view with a progress bar, color-coded diffs and a
-              final summary. Both interactive modes run single-worker;{" "}
-              <span className="kbd">-y</span> enables parallel workers.
+              No Enter needed. Interactive mode runs single-worker;{" "}
+              <span className="kbd">-y</span> auto-confirms and enables parallel
+              workers.
             </p>
           </section>
 

@@ -67,10 +67,11 @@ const STEPS = [
     title: "Install it",
     description: (
       <>
-        Grab a release binary or{" "}
-        <span className="kbd">go install …/immich-exif@latest</span>. It shells
-        out to <span className="kbd">exiftool</span>, so make sure that&apos;s
-        on your PATH.
+        Grab a release binary, or clone the repo and{" "}
+        <span className="kbd">go build</span> in{" "}
+        <span className="kbd">src/</span>. It shells out to{" "}
+        <span className="kbd">exiftool</span>, so make sure that&apos;s on your
+        PATH.
       </>
     ),
   },
@@ -102,7 +103,7 @@ const STEPS = [
 const FAQ = [
   {
     q: "Is it free?",
-    a: "Yes. immich-exif is open source: build it yourself, go install it, or grab a release binary. No paywall.",
+    a: "Yes. immich-exif is open source: build it from source or grab a release binary. No paywall.",
   },
   {
     q: "Does it touch my originals?",

@@ -20,6 +20,7 @@ immich-exif is free and open source. It is for people running Immich who want th
 
 ## Links
 - Home: https://immich-exif.app
+- Documentation: https://immich-exif.app/docs
 - Source code: https://github.com/Majorfi/immich-exif
 - Immich: https://immich.app
 - exiftool: https://exiftool.org
