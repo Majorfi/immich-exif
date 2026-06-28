@@ -33,7 +33,6 @@ main.go
   |                                (shouldSkip callback filters cached assets)
   |
   +-- runClassic()                 Console mode + ui.LogEmitter
-  +-- ui.RunTUI()                  Bubble Tea mode + ui.TUIEmitter
   |    |
   |    +-- process.WorkerPool.Process(assetIDs)
   |         |
@@ -85,10 +84,7 @@ src/
     uploader.go       Upload interface and ModernUploader
 
   ui/
-    emitterLog.go     Classic console emitter with single-keypress input
-    emitterTUI.go     TUI event bridge (channel-based blocking)
-    tui.go            Bubble Tea model and update logic
-    tuiView.go        TUI rendering (progress bar, diff, results)
+    emitterLog.go     Console emitter with single-keypress input
 ```
 
 ## Immich API endpoints used

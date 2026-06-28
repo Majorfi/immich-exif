@@ -123,7 +123,6 @@ type Config struct {
 	Yes          bool
 	VerifyUpload bool
 
-	TUI                   bool
 	ResolveDuplicate      bool
 	IncludeNoAlbum        bool
 	AssetIDs              []string

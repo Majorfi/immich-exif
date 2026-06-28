@@ -189,7 +189,7 @@ func printUnresolvedDuplicateHint(results []model.ProcessResult) {
 }
 
 func maybeResolveDuplicatesNow(client *api.ImmichClient, cfg *model.Config, results []model.ProcessResult) []model.ProcessResult {
-	if cfg.ResolveDuplicate || cfg.Yes || cfg.TUI {
+	if cfg.ResolveDuplicate || cfg.Yes {
 		return nil
 	}
 	assetIDs := unresolvedDuplicateAssetIDs(results)

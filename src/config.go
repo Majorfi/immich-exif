@@ -39,7 +39,6 @@ func parseConfig() (*model.Config, error) {
 	flag.BoolVar(&cfg.Yes, "y", false, "Auto-confirm all changes")
 	flag.BoolVar(&cfg.VerifyUpload, "verify-upload", false, "Re-fetch and checksum-verify the uploaded asset before deleting the original")
 
-	flag.BoolVar(&cfg.TUI, "tui", false, "Interactive TUI mode")
 	flag.BoolVar(&cfg.ResolveDuplicate, "resolve-duplicate", false, "Resolve duplicate upload status by copying associations to duplicate asset and deleting old asset")
 	flag.BoolVar(&cfg.IncludeNoAlbum, "include-no-album", true, "With album-mirrored export, include assets with no album under no-album/")
 	flag.BoolVar(&cfg.All, "all", false, "Process all assets")
