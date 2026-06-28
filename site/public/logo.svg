@@ -1,0 +1,35 @@
+<svg width="500" height="500" viewBox="0 0 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="250" y1="40" x2="250" y2="460" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1D77F2" />
+      <stop offset="1" stop-color="#18C1FA" />
+    </linearGradient>
+    <clipPath id="photo">
+      <rect x="118" y="150" width="264" height="200" rx="26" />
+    </clipPath>
+  </defs>
+
+  <!-- App-icon squircle, Findich/Immich blue. -->
+  <rect x="40" y="40" width="420" height="420" rx="104" fill="url(#bg)" />
+
+  <!-- Photo card. -->
+  <rect x="118" y="150" width="264" height="200" rx="26" fill="#ffffff" />
+  <g clip-path="url(#photo)">
+    <!-- Sky -->
+    <rect x="118" y="150" width="264" height="200" fill="#f3f7fc" />
+    <!-- Sun (amber) -->
+    <circle cx="180" cy="206" r="26" fill="#FFB400" />
+    <!-- Mountains (blue + green), the "geotagged landscape". -->
+    <path d="M118 350 L210 236 L286 350 Z" fill="#1E83F7" />
+    <path d="M232 350 L322 250 L382 350 L382 350 Z" fill="#18C249" />
+  </g>
+
+  <!-- EXIF metadata tag, written into the file. -->
+  <g transform="translate(286 286) rotate(8)">
+    <rect x="0" y="0" width="118" height="56" rx="16" fill="#0a0a0a" />
+    <circle cx="26" cy="28" r="9" fill="#FFB400" />
+    <circle cx="52" cy="28" r="9" fill="#18C249" />
+    <circle cx="78" cy="28" r="9" fill="#ED79B5" />
+    <circle cx="100" cy="28" r="5" fill="#ffffff" fill-opacity="0.6" />
+  </g>
+</svg>
