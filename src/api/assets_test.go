@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -69,7 +71,7 @@ func TestDownloadAssetWritesFile(t *testing.T) {
 	c := NewImmichClient(server.URL, "test-key")
 	destPath := filepath.Join(t.TempDir(), "downloaded.jpg")
 
-	if err := c.DownloadAsset("asset-123", destPath); err != nil {
+	if err := c.DownloadAsset("asset-123", destPath, ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -82,6 +84,44 @@ func TestDownloadAssetWritesFile(t *testing.T) {
 	}
 }
 
+func TestDownloadAssetVerifiesChecksumMatch(t *testing.T) {
+	content := []byte("fake-image-data")
+	sum := sha1.Sum(content)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(content)
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "test-key")
+	destPath := filepath.Join(t.TempDir(), "downloaded.jpg")
+
+	if err := c.DownloadAsset("asset-123", destPath, base64.StdEncoding.EncodeToString(sum[:])); err != nil {
+		t.Fatalf("unexpected error for matching checksum: %v", err)
+	}
+}
+
+func TestDownloadAssetRejectsChecksumMismatch(t *testing.T) {
+	wrong := sha1.Sum([]byte("not-what-was-served"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("fake-image-data"))
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "test-key")
+	destPath := filepath.Join(t.TempDir(), "downloaded.jpg")
+
+	err := c.DownloadAsset("asset-123", destPath, base64.StdEncoding.EncodeToString(wrong[:]))
+	if err == nil {
+		t.Fatal("expected error for checksum mismatch")
+	}
+	if !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("expected checksum mismatch error, got: %v", err)
+	}
+	if _, statErr := os.Stat(destPath); !os.IsNotExist(statErr) {
+		t.Fatal("corrupt download must not be left on disk")
+	}
+}
+
 func TestDownloadAssetReturnsErrorOnFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server error", http.StatusInternalServerError)
@@ -90,7 +130,7 @@ func TestDownloadAssetReturnsErrorOnFailure(t *testing.T) {
 
 	c := NewImmichClient(server.URL, "test-key")
 	destPath := filepath.Join(t.TempDir(), "downloaded.jpg")
-	if err := c.DownloadAsset("asset-123", destPath); err == nil {
+	if err := c.DownloadAsset("asset-123", destPath, ""); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -333,7 +373,7 @@ func TestDownloadAssetCreateFileError(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "test-key")
-	err := c.DownloadAsset("asset-1", "/nonexistent-dir/file.jpg")
+	err := c.DownloadAsset("asset-1", "/nonexistent-dir/file.jpg", "")
 	if err == nil {
 		t.Fatal("expected error for non-existent directory")
 	}
@@ -377,7 +417,7 @@ func TestGetAssetInvalidURL(t *testing.T) {
 
 func TestDownloadAssetInvalidURL(t *testing.T) {
 	c := NewImmichClient("://invalid", "key")
-	err := c.DownloadAsset("id", filepath.Join(t.TempDir(), "f"))
+	err := c.DownloadAsset("id", filepath.Join(t.TempDir(), "f"), "")
 	if err == nil {
 		t.Fatal("expected error")
 	}

@@ -3,12 +3,9 @@ package process
 import (
 	"bytes"
 	"crypto/sha1"
-	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/majorfi/immich-exif/api"
 	"github.com/majorfi/immich-exif/model"
@@ -51,12 +48,5 @@ func fileChecksumSHA1(path string) ([]byte, error) {
 }
 
 func decodeChecksum(checksum string) ([]byte, error) {
-	checksum = strings.TrimSpace(checksum)
-	if b, err := base64.StdEncoding.DecodeString(checksum); err == nil && len(b) == sha1.Size {
-		return b, nil
-	}
-	if b, err := hex.DecodeString(checksum); err == nil && len(b) == sha1.Size {
-		return b, nil
-	}
-	return nil, fmt.Errorf("unrecognized checksum format")
+	return model.DecodeSHA1Checksum(checksum)
 }

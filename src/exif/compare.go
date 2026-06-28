@@ -120,21 +120,26 @@ func CompareRating(exif *model.ExifInfo, existing ExifTagMap) *TagChange {
 		return nil
 	}
 	rating := *exif.Rating
+	ratingPercent := rating * 20
+	writePercent := rating > 0
+
 	if IntMatch(existing["Rating"], rating) &&
-		IntMatch(existing["RatingPercent"], rating*20) &&
+		(!writePercent || IntMatch(existing["RatingPercent"], ratingPercent)) &&
 		IntMatch(existing["XMP-xmp:Rating"], rating) {
 		return nil
 	}
 
-	tc := &TagChange{
-		Args: []string{
-			fmt.Sprintf("-Rating=%d", rating),
-			fmt.Sprintf("-RatingPercent=%d", rating*20),
-			fmt.Sprintf("-XMP-xmp:Rating=%d", rating),
-		},
+	tc := &TagChange{}
+	tc.Args = append(tc.Args, fmt.Sprintf("-Rating=%d", rating))
+	if writePercent {
+		tc.Args = append(tc.Args, fmt.Sprintf("-RatingPercent=%d", ratingPercent))
 	}
+	tc.Args = append(tc.Args, fmt.Sprintf("-XMP-xmp:Rating=%d", rating))
+
 	tc.Diffs = appendIntDiff(tc.Diffs, "Rating", existing["Rating"], rating)
-	tc.Diffs = appendIntDiff(tc.Diffs, "RatingPercent", existing["RatingPercent"], rating*20)
+	if writePercent {
+		tc.Diffs = appendIntDiff(tc.Diffs, "RatingPercent", existing["RatingPercent"], ratingPercent)
+	}
 	tc.Diffs = appendIntDiff(tc.Diffs, "XMP-xmp:Rating", existing["XMP-xmp:Rating"], rating)
 	return tc
 }
@@ -275,11 +280,14 @@ func compareDateTimeFull(existing ExifTagMap, immichTime time.Time, expected str
 			tc.Diffs = appendIntDiff(tc.Diffs, "TimeZoneOffset", oldTZOffset, tzHours)
 		}
 	} else if oldOffset == nil {
-		tc.Args = append(tc.Args, fmt.Sprintf("-OffsetTimeOriginal=%s", offsetStr))
-		tc.Diffs = appendStringDiff(tc.Diffs, "OffsetTimeOriginal", oldOffset, offsetStr)
-		if hasWholeHour && !IntMatch(oldTZOffset, tzHours) {
-			tc.Args = append(tc.Args, fmt.Sprintf("-TimeZoneOffset=%d", tzHours))
-			tc.Diffs = appendIntDiff(tc.Diffs, "TimeZoneOffset", oldTZOffset, tzHours)
+		// The instant already matches via the existing TimeZoneOffset, but the
+		// explicit OffsetTimeOriginal tag is missing. Backfill it from the offset
+		// the file already encodes (never Immich's own zone, which can differ while
+		// still matching the instant) so the clock value is not re-anchored.
+		if tz, ok := oldTZOffset.(float64); ok {
+			consistentOffset := fmt.Sprintf("%+03d:00", int(tz))
+			tc.Args = append(tc.Args, fmt.Sprintf("-OffsetTimeOriginal=%s", consistentOffset))
+			tc.Diffs = appendStringDiff(tc.Diffs, "OffsetTimeOriginal", oldOffset, consistentOffset)
 		}
 	} else if StringMatch(oldOffset, offsetStr) && hasWholeHour && !IntMatch(oldTZOffset, tzHours) {
 		tc.Args = append(tc.Args, fmt.Sprintf("-TimeZoneOffset=%d", tzHours))

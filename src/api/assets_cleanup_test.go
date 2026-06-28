@@ -44,7 +44,7 @@ func TestDownloadAssetRemovesPartialFileOnCopyError(t *testing.T) {
 	}
 
 	destPath := filepath.Join(t.TempDir(), "downloaded.jpg")
-	err := client.DownloadAsset("asset-123", destPath)
+	err := client.DownloadAsset("asset-123", destPath, "")
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("expected copy error, got %v", err)
 	}
