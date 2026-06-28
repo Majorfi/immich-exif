@@ -7,5 +7,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "monthly",
       priority: 1,
     },
+    {
+      url: "https://immich-exif.app/docs",
+      changeFrequency: "monthly",
+      priority: 0.8,
+    },
   ];
 }

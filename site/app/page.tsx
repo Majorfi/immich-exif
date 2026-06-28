@@ -110,7 +110,7 @@ const FAQ = [
   },
   {
     q: "Can it lose my photos?",
-    a: "No. The new asset is uploaded (and optionally checksum-verified with -verify-upload) before the old one is deleted, so the worst case is a duplicate, never a loss. Deletes go through the same API Immich's own trash uses, and -dry-run lets you see every change first.",
+    a: "No. The new asset is uploaded (and optionally checksum-verified with -verify-upload) before the old one is deleted, so the worst case is a duplicate, never a loss. The original is only removed once the corrected copy is confirmed live, and -dry-run lets you see every change first.",
   },
   {
     q: "What do I need?",
@@ -165,7 +165,11 @@ const jsonLd = {
         "A CLI that writes the metadata an Immich server knows (GPS, dates, descriptions, ratings, camera info) back into the original photo and video files using exiftool.",
       isAccessibleForFree: true,
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-      author: { "@type": "Person", name: "Major" },
+      author: {
+        "@type": "Organization",
+        name: "Quub",
+        url: "https://quub.tech",
+      },
       sameAs: [GITHUB],
     },
     {
@@ -191,6 +195,12 @@ export default function Home() {
           <span className="font-mono">immich-exif</span>
         </p>
         <div className="flex items-center gap-2">
+          <a
+            href="/docs"
+            className="btn-ghost hidden rounded-full px-4 py-1.5 text-[13px] font-medium sm:block"
+          >
+            Docs
+          </a>
           <a
             href={GITHUB}
             className="btn-ghost hidden items-center gap-2 rounded-full px-4 py-1.5 text-[13px] font-medium sm:flex"
@@ -318,7 +328,7 @@ export default function Home() {
             <ul className="mt-6 space-y-3 text-[14px] text-fog">
               {[
                 "Reads the tags already in the file, writes only what's missing",
-                "Skips assets whose metadata already matches, never rewriting a file twice",
+                "Skips assets whose metadata already matches, so a re-run does nothing",
                 "Downloads to a temp dir, never overwrites a file outside it",
               ].map((line) => (
                 <li key={line} className="flex gap-3">
@@ -480,10 +490,10 @@ export default function Home() {
             <p>
               Built by{" "}
               <a
-                href="https://github.com/Majorfi"
+                href="https://quub.tech"
                 className="font-medium text-ink hover:text-accent"
               >
-                Major
+                Quub
               </a>
               . Also try{" "}
               <a
