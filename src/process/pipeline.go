@@ -33,18 +33,14 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	if err != nil {
 		return fail("create temp dir: %v", err)
 	}
-	defer func() {
-		if !cfg.DryRun {
-			os.RemoveAll(assetDir)
-		}
-	}()
+	defer os.RemoveAll(assetDir)
 
 	safeName, err := safePathComponent("asset filename", asset.OriginalFileName)
 	if err != nil {
 		return fail("%v", err)
 	}
 	filePath := filepath.Join(assetDir, safeName)
-	if err := client.DownloadAsset(assetID, filePath); err != nil {
+	if err := client.DownloadAsset(assetID, filePath, asset.Checksum); err != nil {
 		return fail("download: %v", err)
 	}
 
@@ -81,7 +77,7 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	}
 
 	if cfg.DryRun {
-		return model.ProcessResult{AssetID: assetID, Status: model.StatusSuccess, Message: fmt.Sprintf("dry-run: %s", filePath)}
+		return model.ProcessResult{AssetID: assetID, Status: model.StatusSuccess, Message: "dry-run: changes previewed, nothing written"}
 	}
 
 	if cfg.ExportDir != "" {
@@ -115,9 +111,15 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	var uploadOutcome UploadOutcome
 	var uploadErr error
 	maxRetries := 3
-	for attempt := 1; attempt <= maxRetries; attempt++ {
+	attempt := 0
+	for attempt < maxRetries {
+		attempt++
 		uploadOutcome, uploadErr = uploader.Upload(filePath, asset, emitter)
 		if uploadErr == nil {
+			break
+		}
+		var nonRetry *nonRetryableError
+		if errors.As(uploadErr, &nonRetry) {
 			break
 		}
 		if attempt < maxRetries {
@@ -130,7 +132,7 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 		}
 	}
 	if uploadErr != nil {
-		return fail("upload (after %d attempts): %v", maxRetries, uploadErr)
+		return fail("upload (after %d attempts): %v", attempt, uploadErr)
 	}
 
 	if !uploadOutcome.Cacheable {

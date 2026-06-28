@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,7 +28,7 @@ func (c *ImmichClient) GetAsset(assetID string) (*model.AssetResponse, error) {
 	return &asset, nil
 }
 
-func (c *ImmichClient) DownloadAsset(assetID, destPath string) (err error) {
+func (c *ImmichClient) DownloadAsset(assetID, destPath, expectedChecksum string) (err error) {
 	req, err := c.newRequest(http.MethodGet, "/assets/"+assetID+"/original", nil)
 	if err != nil {
 		return err
@@ -52,8 +53,24 @@ func (c *ImmichClient) DownloadAsset(assetID, destPath string) (err error) {
 		}
 	}()
 
-	if _, err = io.Copy(f, resp.Body); err != nil {
+	hasher := sha1.New()
+	written, err := io.Copy(io.MultiWriter(f, hasher), resp.Body)
+	if err != nil {
 		return fmt.Errorf("write file: %w", err)
+	}
+
+	if resp.ContentLength >= 0 && written != resp.ContentLength {
+		return fmt.Errorf("download truncated for asset %s: wrote %d bytes, expected %d", model.ShortID(assetID), written, resp.ContentLength)
+	}
+
+	if expectedChecksum != "" {
+		want, decodeErr := model.DecodeSHA1Checksum(expectedChecksum)
+		if decodeErr != nil {
+			return fmt.Errorf("decode source checksum %q: %w", expectedChecksum, decodeErr)
+		}
+		if !bytes.Equal(hasher.Sum(nil), want) {
+			return fmt.Errorf("download checksum mismatch for asset %s (file is corrupt or truncated)", model.ShortID(assetID))
+		}
 	}
 	return nil
 }
@@ -160,6 +177,7 @@ func (c *ImmichClient) CopyAsset(sourceID, destinationID string) error {
 	if err != nil {
 		return err
 	}
+	_, _ = io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	return nil
 }
@@ -182,6 +200,7 @@ func (c *ImmichClient) DeleteAssets(assetIDs []string, force bool) error {
 	if err != nil {
 		return err
 	}
+	_, _ = io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	return nil
 }
@@ -204,6 +223,7 @@ func (c *ImmichClient) UpdateAssetVisibility(assetID, visibility string) error {
 	if err != nil {
 		return err
 	}
+	_, _ = io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	return nil
 }

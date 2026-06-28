@@ -52,7 +52,7 @@ func ReadExifTags(filePath string) (ExifTagMap, error) {
 
 func readExifTagsWithArgs(filePath string, exifArgs []string) (ExifTagMap, error) {
 	cmdArgs := append([]string{}, exifArgs...)
-	cmdArgs = append(cmdArgs, filePath)
+	cmdArgs = append(cmdArgs, "--", filePath)
 	cmd := exec.Command("exiftool", cmdArgs...)
 	out, err := cmd.Output()
 	if err != nil {
@@ -72,7 +72,7 @@ func readExifTagsWithArgs(filePath string, exifArgs []string) (ExifTagMap, error
 
 func WriteExifTags(filePath string, args []string) error {
 	cmdArgs := append([]string{}, args...)
-	cmdArgs = append(cmdArgs, "-overwrite_original", filePath)
+	cmdArgs = append(cmdArgs, "-overwrite_original", "--", filePath)
 	cmd := exec.Command("exiftool", cmdArgs...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

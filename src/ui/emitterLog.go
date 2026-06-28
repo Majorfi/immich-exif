@@ -32,11 +32,12 @@ func (e *LogEmitter) EmitProgress(event model.ProgressEvent) {
 
 func (e *LogEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
 	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if event.AssetID != "" {
 		e.lastAssetID = event.AssetID
 		e.lastFilename = event.Filename
 	}
-	e.mu.Unlock()
 
 	if len(event.Entries) == 0 {
 		return model.ActionConfirm

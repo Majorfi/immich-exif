@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -188,8 +189,11 @@ func printUnresolvedDuplicateHint(results []model.ProcessResult) {
 	}
 }
 
-func maybeResolveDuplicatesNow(client *api.ImmichClient, cfg *model.Config, results []model.ProcessResult) []model.ProcessResult {
+func maybeResolveDuplicatesNow(ctx context.Context, client *api.ImmichClient, cfg *model.Config, results []model.ProcessResult) []model.ProcessResult {
 	if cfg.ResolveDuplicate || cfg.Yes {
+		return nil
+	}
+	if ctx.Err() != nil {
 		return nil
 	}
 	assetIDs := unresolvedDuplicateAssetIDs(results)
@@ -206,7 +210,7 @@ func maybeResolveDuplicatesNow(client *api.ImmichClient, cfg *model.Config, resu
 	fmt.Printf("\nRe-running unresolved duplicates with -resolve-duplicate (%d assets)\n", len(assetIDs))
 	resolveCfg := buildResolveDuplicateFollowUpConfig(cfg)
 	resolveUploader := &process.ModernUploader{Client: client, ResolveDuplicate: true, VerifyUpload: cfg.VerifyUpload}
-	return runClassic(client, resolveUploader, resolveCfg, assetIDs)
+	return runClassic(ctx, client, resolveUploader, resolveCfg, assetIDs)
 }
 
 func promptResolveDuplicatesNow(reader io.Reader, writer io.Writer) bool {

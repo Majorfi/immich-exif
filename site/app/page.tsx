@@ -1,8 +1,8 @@
 import TerminalWindow from "@/components/TerminalWindow";
 import RunWindow from "@/components/RunWindow";
+import { SITE_URL } from "@/lib/site";
 
 const GITHUB = "https://github.com/Majorfi/immich-exif";
-const SITE = "https://immich-exif.app";
 
 const WRITES = [
   {
@@ -52,7 +52,12 @@ const SAFETY = [
   {
     title: "Verify the bytes",
     description:
-      "With -verify-upload, the new asset is re-fetched and its checksum compared to what you sent. A mismatch refuses to delete the original. A bad upload can't cost you the photo.",
+      "Checksum verification is on by default: the uploaded asset is re-fetched and its checksum compared to what you sent before anything is removed. Downloads are checked the same way, so a corrupt or truncated transfer never reaches the upload step.",
+  },
+  {
+    title: "Permanent only when verified",
+    description:
+      "A verified original is permanently deleted, because the new copy is provably byte-identical. Pass -no-verify-upload to skip the check and the original goes to Immich's trash instead, where you can still recover it.",
   },
   {
     title: "Dry-run anything",
@@ -111,7 +116,7 @@ const FAQ = [
   },
   {
     q: "Can it lose my photos?",
-    a: "No. The new asset is uploaded (and optionally checksum-verified with -verify-upload) before the old one is deleted, so the worst case is a duplicate, never a loss. The original is only removed once the corrected copy is confirmed live, and -dry-run lets you see every change first.",
+    a: "It's built hard against that. The new asset is uploaded before the old one is deleted, so an interruption leaves a duplicate, never a hole. By default the upload is checksum-verified byte-for-byte (and downloads are verified too) before the original is removed; only a provably identical copy lets the original be permanently deleted. If you pass -no-verify-upload to skip that check, the original is moved to Immich's trash instead, so it stays recoverable. And -dry-run lets you see every change first.",
   },
   {
     q: "What do I need?",
@@ -161,7 +166,7 @@ const jsonLd = {
       name: "immich-exif",
       applicationCategory: "UtilitiesApplication",
       operatingSystem: "macOS, Linux, Windows",
-      url: SITE,
+      url: SITE_URL,
       description:
         "A CLI that writes the metadata an Immich server knows (GPS, dates, descriptions, ratings, camera info) back into the original photo and video files using exiftool.",
       isAccessibleForFree: true,
@@ -378,7 +383,7 @@ export default function Home() {
             It re-uploads and deletes real assets, so the destructive path is
             the careful path.
           </p>
-          <div className="mt-12 grid gap-4 lg:grid-cols-3">
+          <div className="mt-12 grid gap-4 sm:grid-cols-2">
             {SAFETY.map((item) => (
               <article key={item.title} className="card p-6">
                 <h3 className="text-[15px] font-semibold">{item.title}</h3>

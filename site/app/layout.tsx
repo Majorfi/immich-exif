@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,20 +17,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://immich-exif.app"),
+  metadataBase: new URL(SITE_URL),
   title: "immich-exif: write your Immich metadata back into your files",
   description:
     "Write the GPS, dates, descriptions and ratings your self-hosted Immich server knows back into your original photos and videos with exiftool. Open source.",
   alternates: { canonical: "/" },
-  keywords: [
-    "Immich",
-    "exiftool",
-    "EXIF metadata",
-    "self-hosted photos",
-    "Immich CLI",
-    "embed GPS metadata",
-    "Immich metadata sync",
-  ],
   openGraph: {
     title: "immich-exif: metadata back in your files",
     description:

@@ -29,6 +29,8 @@ func parseConfig() (*model.Config, error) {
 
 	cfg := &model.Config{}
 	var albums stringSlice
+	var noVerifyUpload bool
+	var allowHTTP bool
 
 	flag.StringVar(&cfg.URL, "url", os.Getenv("IMMICH_URL"), "Immich server URL (env: IMMICH_URL)")
 	flag.StringVar(&cfg.APIKey, "api-key", os.Getenv("IMMICH_API_KEY"), "API key (env: IMMICH_API_KEY)")
@@ -37,7 +39,8 @@ func parseConfig() (*model.Config, error) {
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "Embed EXIF but skip re-upload")
 	flag.StringVar(&cfg.ExportDir, "export-dir", "", "Save files to directory instead of re-uploading")
 	flag.BoolVar(&cfg.Yes, "y", false, "Auto-confirm all changes")
-	flag.BoolVar(&cfg.VerifyUpload, "verify-upload", false, "Re-fetch and checksum-verify the uploaded asset before deleting the original")
+	flag.BoolVar(&noVerifyUpload, "no-verify-upload", false, "Skip checksum verification; the original is moved to Immich trash instead of being permanently deleted")
+	flag.BoolVar(&allowHTTP, "allow-http", false, "Allow a plaintext http:// server URL (the API key is sent in clear text)")
 
 	flag.BoolVar(&cfg.ResolveDuplicate, "resolve-duplicate", false, "Resolve duplicate upload status by copying associations to duplicate asset and deleting old asset")
 	flag.BoolVar(&cfg.IncludeNoAlbum, "include-no-album", true, "With album-mirrored export, include assets with no album under no-album/")
@@ -52,6 +55,7 @@ func parseConfig() (*model.Config, error) {
 	}
 
 	flag.Parse()
+	cfg.VerifyUpload = !noVerifyUpload
 	cfg.AlbumIDs = albums
 	cfg.AssetIDs = flag.Args()
 	if hasAllAlbumSelector(cfg.AlbumIDs) {
@@ -87,6 +91,10 @@ func parseConfig() (*model.Config, error) {
 	}
 
 	cfg.URL = strings.TrimRight(cfg.URL, "/")
+
+	if strings.HasPrefix(strings.ToLower(cfg.URL), "http://") && !allowHTTP {
+		return nil, fmt.Errorf("refusing to send the API key over plaintext http:// (%s); use https:// or pass --allow-http to override", cfg.URL)
+	}
 
 	selectionModes := 0
 	if cfg.All || cfg.AllAlbums {

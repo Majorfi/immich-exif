@@ -159,3 +159,60 @@ func TestModernUploaderVerifyUploadProceedsOnMatch(t *testing.T) {
 		t.Fatal("expected DELETE of the original after a verified upload")
 	}
 }
+
+func TestModernUploaderDeleteForceFollowsVerification(t *testing.T) {
+	content := []byte("the-real-uploaded-bytes")
+	sum := sha1.Sum(content)
+
+	cases := []struct {
+		name      string
+		verify    bool
+		wantForce bool
+	}{
+		{name: "verified upload deletes permanently", verify: true, wantForce: true},
+		{name: "unverified upload moves to trash", verify: false, wantForce: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotForce bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/api/assets":
+					_, _ = io.Copy(io.Discard, r.Body)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusCreated)
+					_, _ = w.Write([]byte(`{"id":"new-id","status":"created"}`))
+				case r.Method == http.MethodGet && r.URL.Path == "/api/assets/new-id":
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(model.AssetResponse{ID: "new-id", Checksum: base64.StdEncoding.EncodeToString(sum[:])})
+				case r.Method == http.MethodDelete && r.URL.Path == "/api/assets":
+					var payload model.DeleteAssetsRequest
+					if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+						t.Fatalf("decode delete payload: %v", err)
+					}
+					gotForce = payload.Force
+					w.WriteHeader(http.StatusNoContent)
+				default:
+					w.WriteHeader(http.StatusOK)
+				}
+			}))
+			defer server.Close()
+
+			filePath := filepath.Join(t.TempDir(), "f.jpg")
+			if err := os.WriteFile(filePath, content, 0644); err != nil {
+				t.Fatalf("write file: %v", err)
+			}
+
+			uploader := &ModernUploader{Client: api.NewImmichClient(server.URL, "key"), VerifyUpload: tc.verify}
+			asset := &model.AssetResponse{ID: "old-id", OriginalFileName: "f.jpg", FileCreatedAt: time.Now(), FileModifiedAt: time.Now()}
+
+			if _, err := uploader.Upload(filePath, asset, &noopEmitter{}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if gotForce != tc.wantForce {
+				t.Fatalf("expected delete force=%v, got %v", tc.wantForce, gotForce)
+			}
+		})
+	}
+}

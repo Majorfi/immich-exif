@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/majorfi/immich-exif/api"
 	"github.com/majorfi/immich-exif/exif"
@@ -15,32 +18,37 @@ import (
 var snapshotAssetFn = state.SnapshotAsset
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	cfg, err := parseConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	if err := exif.CheckExiftool(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	tmpDir, err := setupTmpDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	cfg.TmpDir = tmpDir
-	if !cfg.DryRun {
-		defer os.RemoveAll(tmpDir)
-	}
+	defer os.RemoveAll(tmpDir)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	client := api.NewImmichClient(cfg.URL, cfg.APIKey)
 
 	if err := client.ResolveAPIMode(cfg.ImmichAPI); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: cannot reach Immich server: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	var stateDB *state.StateDB
@@ -83,7 +91,7 @@ func main() {
 	assetIDs, stats, err := resolveAssetIDs(client, cfg, shouldSkip)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error resolving assets: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	if stats.NoWritableMetadataSkipped > 0 {
@@ -98,7 +106,7 @@ func main() {
 
 	if len(assetIDs) == 0 {
 		fmt.Println("No assets to process.")
-		return
+		return 0
 	}
 
 	uploader := &process.ModernUploader{Client: client, ResolveDuplicate: cfg.ResolveDuplicate, VerifyUpload: cfg.VerifyUpload}
@@ -107,15 +115,15 @@ func main() {
 		cfg.ExportDir = resolveExportDir(cfg)
 		if err := os.MkdirAll(cfg.ExportDir, 0755); err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating export dir: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	}
 
-	results := runClassic(client, uploader, cfg, assetIDs)
+	results := runClassic(ctx, client, uploader, cfg, assetIDs)
 
 	if !cfg.ResolveDuplicate {
 		printUnresolvedDuplicateHint(results)
-		followUpResults := maybeResolveDuplicatesNow(client, cfg, results)
+		followUpResults := maybeResolveDuplicatesNow(ctx, client, cfg, results)
 		if len(followUpResults) > 0 {
 			results = append(results, followUpResults...)
 			printUnresolvedDuplicateHint(followUpResults)
@@ -128,14 +136,15 @@ func main() {
 
 	if len(finalUnresolvedDuplicateResults(results)) > 0 {
 		fmt.Fprintf(os.Stderr, "Error: unresolved duplicate uploads remain; rerun with -resolve-duplicate\n")
-		os.Exit(1)
+		return 1
 	}
 
 	for _, r := range results {
 		if r.Status == model.StatusFailed {
-			os.Exit(1)
+			return 1
 		}
 	}
+	return 0
 }
 
 func rememberAssetSnapshot(asset model.AssetResponse, snapshots map[string]string) (string, bool) {
@@ -148,7 +157,7 @@ func rememberAssetSnapshot(asset model.AssetResponse, snapshots map[string]strin
 	return snap, true
 }
 
-func runClassic(client *api.ImmichClient, uploader process.Uploader, cfg *model.Config, assetIDs []string) []model.ProcessResult {
+func runClassic(ctx context.Context, client *api.ImmichClient, uploader process.Uploader, cfg *model.Config, assetIDs []string) []model.ProcessResult {
 	if !cfg.Yes && cfg.Workers > 1 {
 		fmt.Printf("Interactive mode forces single worker (requested: %d)\n", cfg.Workers)
 		cfg.Workers = 1
@@ -157,6 +166,18 @@ func runClassic(client *api.ImmichClient, uploader process.Uploader, cfg *model.
 	emitter := &ui.LogEmitter{AutoConfirm: cfg.Yes}
 
 	pool := process.NewWorkerPool(client, uploader, cfg, emitter)
+
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			fmt.Fprintln(os.Stderr, "\nInterrupt received, finishing in-flight work and stopping...")
+			pool.Cancel()
+		case <-done:
+		}
+	}()
+
 	results := pool.Process(assetIDs)
 	emitter.EmitAllDone(model.AllDoneEvent{Results: results})
 

@@ -108,7 +108,7 @@ func TestSearchAssetsSuccess(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	result, err := c.searchAssetsPage(1, 10, nil, true)
+	result, err := c.searchAssetsPage(1, 10, nil, true, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -236,6 +236,56 @@ func TestGetAlbumAssetsV3UsesSearch(t *testing.T) {
 	}
 	if len(ids) != 2 || ids[0] != "a1" || ids[1] != "a2" {
 		t.Fatalf("expected [a1 a2], got %v", ids)
+	}
+}
+
+func TestGetAlbumAssetsV3QueriesEachVisibility(t *testing.T) {
+	byVisibility := map[string][]model.AssetResponse{
+		"timeline": {{ID: "a1"}},
+		"archive":  {{ID: "a2"}},
+		"hidden":   {{ID: "a3"}},
+	}
+	seen := map[string]bool{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/search/metadata" {
+			t.Fatalf("expected search/metadata, got: %s", r.URL.Path)
+		}
+		var body model.SearchMetadataRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Visibility == "locked" {
+			t.Fatal("locked visibility must never be queried")
+		}
+		seen[body.Visibility] = true
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(model.SearchMetadataResponse{
+			Assets: model.SearchAssets{Items: byVisibility[body.Visibility]},
+		})
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "key")
+	c.apiV3 = true
+	ids, err := c.GetAlbumAssets("album-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := map[string]bool{}
+	for _, id := range ids {
+		got[id] = true
+	}
+	for _, want := range []string{"a1", "a2", "a3"} {
+		if !got[want] {
+			t.Fatalf("expected merged ids to include %s, got %v", want, ids)
+		}
+	}
+	for _, vis := range []string{"timeline", "archive", "hidden"} {
+		if !seen[vis] {
+			t.Fatalf("expected visibility %q to be queried, saw %v", vis, seen)
+		}
 	}
 }
 
@@ -459,7 +509,7 @@ func TestSearchAssetsReturnsErrorOnFailure(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	_, err := c.searchAssetsPage(1, 10, nil, true)
+	_, err := c.searchAssetsPage(1, 10, nil, true, "")
 	if err == nil {
 		t.Fatal("expected error")
 	}

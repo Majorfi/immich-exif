@@ -36,7 +36,7 @@ func (u *ModernUploader) Upload(filePath string, asset *model.AssetResponse, emi
 	status := normalizeUploadStatus(uploadResp.Status)
 
 	if newID == "" {
-		return UploadOutcome{}, fmt.Errorf("upload returned empty asset ID (status: %q)", uploadResp.Status)
+		return UploadOutcome{}, nonRetryable(fmt.Errorf("upload returned empty asset ID (status: %q)", uploadResp.Status))
 	}
 
 	emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Upload status: %s (asset ID: %s)", status, newID)})
@@ -50,7 +50,7 @@ func (u *ModernUploader) Upload(filePath string, asset *model.AssetResponse, emi
 		if u.ResolveDuplicate && newID != asset.ID {
 			emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Duplicate detected. Resolving by moving associations to %s and deleting old asset...", newID)})
 			if err := u.finalizeReplacement(filePath, asset, newID, emitter); err != nil {
-				return UploadOutcome{}, err
+				return UploadOutcome{}, nonRetryable(err)
 			}
 			return UploadOutcome{
 				NewID:     newID,
@@ -79,12 +79,12 @@ func (u *ModernUploader) Upload(filePath string, asset *model.AssetResponse, emi
 	}
 
 	if status != "created" {
-		return UploadOutcome{}, fmt.Errorf("unexpected upload status %q; no copy/delete performed", uploadResp.Status)
+		return UploadOutcome{}, nonRetryable(fmt.Errorf("unexpected upload status %q; no copy/delete performed", uploadResp.Status))
 	}
 
 	emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("New asset ID: %s", newID)})
 	if err := u.finalizeReplacement(filePath, asset, newID, emitter); err != nil {
-		return UploadOutcome{}, err
+		return UploadOutcome{}, nonRetryable(err)
 	}
 
 	return UploadOutcome{NewID: newID, Cacheable: true}, nil
@@ -111,14 +111,29 @@ func (u *ModernUploader) finalizeReplacement(filePath string, asset *model.Asset
 		}
 	}
 
-	emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Deleting old asset %s...", model.ShortID(asset.ID))})
-	if err := u.Client.DeleteAssets([]string{asset.ID}, true); err != nil {
+	permanent := u.VerifyUpload
+	deleteStep := fmt.Sprintf("Moving old asset %s to trash...", model.ShortID(asset.ID))
+	if permanent {
+		deleteStep = fmt.Sprintf("Deleting old asset %s...", model.ShortID(asset.ID))
+	}
+	emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: deleteStep})
+	if err := u.Client.DeleteAssets([]string{asset.ID}, permanent); err != nil {
 		msg := fmt.Sprintf("WARNING: failed to delete old asset %s: %v (target asset %s is live)", model.ShortID(asset.ID), err, model.ShortID(targetID))
 		emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: msg})
 		return fmt.Errorf("delete old asset failed (target asset %s is live but old %s was not deleted): %w", targetID, asset.ID, err)
 	}
 	return nil
 }
+
+// nonRetryableError marks a failure that happened after a new asset was already
+// created on the server; retrying the whole upload would risk duplicates or an
+// orphaned asset, so the pipeline must fail loudly instead of re-running it.
+type nonRetryableError struct{ err error }
+
+func (e *nonRetryableError) Error() string { return e.err.Error() }
+func (e *nonRetryableError) Unwrap() error { return e.err }
+
+func nonRetryable(err error) error { return &nonRetryableError{err: err} }
 
 func normalizeUploadStatus(status string) string {
 	return strings.ToLower(strings.TrimSpace(status))

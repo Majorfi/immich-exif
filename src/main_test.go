@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -466,12 +467,12 @@ func TestMaybeResolveDuplicatesNowEarlyExit(t *testing.T) {
 	}
 
 	yesCfg := &model.Config{Yes: true}
-	if followUp := maybeResolveDuplicatesNow(nil, yesCfg, results); followUp != nil {
+	if followUp := maybeResolveDuplicatesNow(context.Background(), nil, yesCfg, results); followUp != nil {
 		t.Fatalf("expected nil follow-up with -y, got %v", followUp)
 	}
 
 	resolveCfg := &model.Config{ResolveDuplicate: true}
-	if followUp := maybeResolveDuplicatesNow(nil, resolveCfg, results); followUp != nil {
+	if followUp := maybeResolveDuplicatesNow(context.Background(), nil, resolveCfg, results); followUp != nil {
 		t.Fatalf("expected nil follow-up with -resolve-duplicate, got %v", followUp)
 	}
 }
@@ -481,7 +482,7 @@ func TestMaybeResolveDuplicatesNowNoUnresolved(t *testing.T) {
 	results := []model.ProcessResult{
 		{AssetID: "asset-1", Status: model.StatusSuccess},
 	}
-	if followUp := maybeResolveDuplicatesNow(nil, cfg, results); followUp != nil {
+	if followUp := maybeResolveDuplicatesNow(context.Background(), nil, cfg, results); followUp != nil {
 		t.Fatalf("expected nil follow-up without unresolved duplicates, got %v", followUp)
 	}
 }
@@ -503,7 +504,7 @@ func TestMaybeResolveDuplicatesNowNonTerminal(t *testing.T) {
 	defer restoreStdin()
 	defer restoreStdout()
 
-	if followUp := maybeResolveDuplicatesNow(nil, cfg, results); followUp != nil {
+	if followUp := maybeResolveDuplicatesNow(context.Background(), nil, cfg, results); followUp != nil {
 		t.Fatalf("expected nil follow-up for non-terminal stdio, got %v", followUp)
 	}
 }
@@ -530,7 +531,7 @@ func TestMaybeResolveDuplicatesNowTerminalPromptEOF(t *testing.T) {
 	defer restoreStdin()
 	defer restoreStdout()
 
-	if followUp := maybeResolveDuplicatesNow(nil, cfg, results); followUp != nil {
+	if followUp := maybeResolveDuplicatesNow(context.Background(), nil, cfg, results); followUp != nil {
 		t.Fatalf("expected nil follow-up for EOF prompt input, got %v", followUp)
 	}
 }
@@ -764,7 +765,7 @@ func TestRunClassicForcesSingleWorkerInInteractiveMode(t *testing.T) {
 	cfg := &model.Config{Workers: 4, Yes: false}
 
 	output := captureStdout(func() {
-		results := runClassic(nil, nil, cfg, []string{})
+		results := runClassic(context.Background(), nil, nil, cfg, []string{})
 		if len(results) != 0 {
 			t.Fatalf("expected no results for empty asset list, got %d", len(results))
 		}
@@ -782,7 +783,7 @@ func TestRunClassicKeepsWorkerCountWhenAutoConfirmEnabled(t *testing.T) {
 	cfg := &model.Config{Workers: 4, Yes: true}
 
 	output := captureStdout(func() {
-		results := runClassic(nil, nil, cfg, []string{})
+		results := runClassic(context.Background(), nil, nil, cfg, []string{})
 		if len(results) != 0 {
 			t.Fatalf("expected no results for empty asset list, got %d", len(results))
 		}
@@ -1089,6 +1090,68 @@ func TestParseConfigSuccess(t *testing.T) {
 	}
 	if !cfg.IncludeNoAlbum {
 		t.Fatal("expected includeNoAlbum=true")
+	}
+}
+
+func TestParseConfigVerifyUploadDefaultsOn(t *testing.T) {
+	defer setupConfigTest([]string{
+		"immich-exif",
+		"-url", "https://example.com",
+		"-api-key", "test-key",
+		"-all",
+	})()
+
+	cfg, err := parseConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.VerifyUpload {
+		t.Fatal("expected verify-upload to default to true (safe by default)")
+	}
+}
+
+func TestParseConfigNoVerifyUploadDisables(t *testing.T) {
+	defer setupConfigTest([]string{
+		"immich-exif",
+		"-url", "https://example.com",
+		"-api-key", "test-key",
+		"-no-verify-upload",
+		"-all",
+	})()
+
+	cfg, err := parseConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.VerifyUpload {
+		t.Fatal("expected -no-verify-upload to disable verification")
+	}
+}
+
+func TestParseConfigRejectsPlaintextHTTP(t *testing.T) {
+	defer setupConfigTest([]string{
+		"immich-exif",
+		"-url", "http://example.com",
+		"-api-key", "test-key",
+		"-all",
+	})()
+
+	if _, err := parseConfig(); err == nil {
+		t.Fatal("expected plaintext http:// URL to be rejected without --allow-http")
+	}
+}
+
+func TestParseConfigAllowsHTTPWithFlag(t *testing.T) {
+	defer setupConfigTest([]string{
+		"immich-exif",
+		"-url", "http://example.com",
+		"-api-key", "test-key",
+		"-allow-http",
+		"-all",
+	})()
+
+	if _, err := parseConfig(); err != nil {
+		t.Fatalf("expected http:// URL accepted with --allow-http, got: %v", err)
 	}
 }
 

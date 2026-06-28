@@ -578,7 +578,12 @@ func TestCompareDescriptionMatch(t *testing.T) {
 	}
 }
 
-func TestCompareDateTimeFullMomentMatchNilOffsetAddsTZOffset(t *testing.T) {
+func TestCompareDateTimeFullMomentMatchNilOffsetPreservesInstant(t *testing.T) {
+	// The file records 16:56:36 with TimeZoneOffset +1, i.e. 15:56:36Z, which
+	// already matches Immich. Only the explicit OffsetTimeOriginal tag is missing,
+	// so it must be backfilled as +01:00 (consistent with the existing clock).
+	// Attaching Immich's own zone (+00:00) or zeroing TimeZoneOffset would shift
+	// the recorded instant by an hour.
 	dt := "2025-12-10T15:56:36Z"
 	exif := &model.ExifInfo{DateTimeOriginal: &dt}
 	existing := ExifTagMap{
@@ -587,21 +592,25 @@ func TestCompareDateTimeFullMomentMatchNilOffsetAddsTZOffset(t *testing.T) {
 	}
 	changes := CompareMetadata(exif, existing)
 	args := CollectExifArgs(changes)
-	hasOffset := false
-	hasTZ := false
 	for _, arg := range args {
-		if arg == "-OffsetTimeOriginal=+00:00" {
-			hasOffset = true
+		if strings.HasPrefix(arg, "-DateTimeOriginal=") {
+			t.Fatalf("must not rewrite the clock value when the instant already matches, got %v", args)
 		}
 		if arg == "-TimeZoneOffset=0" {
-			hasTZ = true
+			t.Fatalf("must not clobber the correct TimeZoneOffset, got %v", args)
+		}
+		if arg == "-OffsetTimeOriginal=+00:00" {
+			t.Fatalf("must not attach Immich's zone to the existing +01:00 clock, got %v", args)
 		}
 	}
-	if !hasOffset {
-		t.Fatalf("expected OffsetTimeOriginal arg, got %v", args)
+	hasConsistentOffset := false
+	for _, arg := range args {
+		if arg == "-OffsetTimeOriginal=+01:00" {
+			hasConsistentOffset = true
+		}
 	}
-	if !hasTZ {
-		t.Fatalf("expected TimeZoneOffset arg, got %v", args)
+	if !hasConsistentOffset {
+		t.Fatalf("expected OffsetTimeOriginal backfilled as +01:00, got %v", args)
 	}
 }
 

@@ -2,11 +2,24 @@ import type { Metadata } from "next";
 
 const GITHUB = "https://github.com/Majorfi/immich-exif";
 
+const DOCS_TITLE = "Documentation — immich-exif";
+const DOCS_DESCRIPTION =
+  "Install, configure and run immich-exif: flags, the metadata tags it writes, export mode, the incremental cache, and how it keeps your photos safe.";
+
 export const metadata: Metadata = {
-  title: "Documentation — immich-exif",
-  description:
-    "Install, configure and run immich-exif: flags, the metadata tags it writes, export mode, the incremental cache, and how it keeps your photos safe.",
+  title: DOCS_TITLE,
+  description: DOCS_DESCRIPTION,
   alternates: { canonical: "/docs" },
+  openGraph: {
+    title: DOCS_TITLE,
+    description: DOCS_DESCRIPTION,
+    type: "article",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: DOCS_TITLE,
+    description: DOCS_DESCRIPTION,
+  },
 };
 
 const TOC = [
@@ -71,9 +84,14 @@ const FLAGS = [
     desc: "In mirrored export, put assets with no album under no-album/.",
   },
   {
-    flag: "-verify-upload",
+    flag: "-no-verify-upload",
     def: "false",
-    desc: "Re-fetch the new asset and checksum it before deleting the original.",
+    desc: "Skip checksum verification; the original is moved to Immich trash instead of being permanently deleted.",
+  },
+  {
+    flag: "-allow-http",
+    def: "false",
+    desc: "Allow a plaintext http:// server URL — the API key is sent in clear text.",
   },
   {
     flag: "-resolve-duplicate",
@@ -422,8 +440,10 @@ immich-exif -all                    # the whole library`}</Code>
             <ul className="space-y-2">
               {[
                 "The new asset is uploaded and its associations copied before the old one is removed. An interruption leaves a duplicate, never a hole.",
-                "With -verify-upload, the new asset is re-fetched and its checksum compared to the local file. A mismatch refuses to delete the original.",
-                "-dry-run shows every change and writes nothing, so you can confirm exactly what will happen first. Once the corrected copy is confirmed live, the original version is permanently removed.",
+                "Checksum verification is on by default: the uploaded asset is re-fetched and its checksum compared to the local file, and downloads are verified the same way. A mismatch refuses to delete the original.",
+                "When verification passes (the default), the original is permanently deleted, because the new copy is provably byte-identical. Pass -no-verify-upload to skip the check and the original is moved to Immich's trash instead, where it stays recoverable.",
+                "By default a plaintext http:// server URL is rejected so the API key never travels in clear text; pass -allow-http to override that.",
+                "-dry-run shows every change and writes nothing, so you can confirm exactly what will happen first.",
               ].map((line) => (
                 <li key={line} className="flex gap-3">
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />

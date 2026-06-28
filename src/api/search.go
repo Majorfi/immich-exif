@@ -18,12 +18,13 @@ type AssetSelectionStats struct {
 	StateSkipped              int
 }
 
-func (c *ImmichClient) searchAssetsPage(page, size int, albumIDs []string, withExif bool) (*model.SearchAssets, error) {
+func (c *ImmichClient) searchAssetsPage(page, size int, albumIDs []string, withExif bool, visibility string) (*model.SearchAssets, error) {
 	body := model.SearchMetadataRequest{
-		Page:     page,
-		Size:     size,
-		WithExif: withExif,
-		AlbumIDs: albumIDs,
+		Page:       page,
+		Size:       size,
+		WithExif:   withExif,
+		AlbumIDs:   albumIDs,
+		Visibility: visibility,
 	}
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
@@ -44,12 +45,12 @@ func (c *ImmichClient) searchAssetsPage(page, size int, albumIDs []string, withE
 	return &resp.Assets, nil
 }
 
-func (c *ImmichClient) forEachSearchPage(albumIDs []string, withExif bool, handle func([]model.AssetResponse)) error {
+func (c *ImmichClient) forEachSearchPage(albumIDs []string, withExif bool, visibility string, handle func([]model.AssetResponse)) error {
 	page := 1
 	pageSize := 1000
 
 	for {
-		result, err := c.searchAssetsPage(page, pageSize, albumIDs, withExif)
+		result, err := c.searchAssetsPage(page, pageSize, albumIDs, withExif, visibility)
 		if err != nil {
 			return fmt.Errorf("search page %d: %w", page, err)
 		}
@@ -76,7 +77,7 @@ func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool
 	var allIDs []string
 	stats := AssetSelectionStats{}
 
-	err := c.forEachSearchPage(nil, true, func(items []model.AssetResponse) {
+	err := c.forEachSearchPage(nil, true, "", func(items []model.AssetResponse) {
 		for _, asset := range items {
 			if model.IsUnsupportedVideoAsset(asset) {
 				stats.UnsupportedVideoSkipped++
@@ -169,16 +170,29 @@ func (c *ImmichClient) GetAlbumAssets(albumID string) ([]string, error) {
 	return ids, nil
 }
 
+// albumSearchVisibilities are the visibilities enumerated when paging an album
+// via search/metadata. The endpoint filters by a single visibility (defaulting
+// to timeline), so each must be queried to cover archived and hidden members.
+// "locked" is excluded: it requires an elevated session.
+var albumSearchVisibilities = []string{"timeline", "archive", "hidden"}
+
 func (c *ImmichClient) searchAlbumAssetIDs(albumID string) ([]string, error) {
 	var ids []string
+	seen := map[string]bool{}
 
-	err := c.forEachSearchPage([]string{albumID}, false, func(items []model.AssetResponse) {
-		for _, asset := range items {
-			ids = append(ids, asset.ID)
+	for _, visibility := range albumSearchVisibilities {
+		err := c.forEachSearchPage([]string{albumID}, false, visibility, func(items []model.AssetResponse) {
+			for _, asset := range items {
+				if seen[asset.ID] {
+					continue
+				}
+				seen[asset.ID] = true
+				ids = append(ids, asset.ID)
+			}
+		})
+		if err != nil {
+			return nil, fmt.Errorf("search album %s (visibility %s): %w", albumID, visibility, err)
 		}
-	})
-	if err != nil {
-		return nil, fmt.Errorf("search album %s: %w", albumID, err)
 	}
 
 	return ids, nil
