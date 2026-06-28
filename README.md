@@ -25,8 +25,8 @@ Video metadata writing is supported for `mp4`, `mov`, and `m4v`. Other video con
 
 ## Quick wins
 
-| Scenario                                                    | Command                                                        |
-| ----------------------------------------------------------- | -------------------------------------------------------------- |
+| Scenario                                                    | Command                                                 |
+| ----------------------------------------------------------- | ------------------------------------------------------- |
 | I want to test one photo safely                             | `immich-exif -dry-run <asset-id>`                       |
 | I want to process one album interactively                   | `immich-exif -album <album-id>`                         |
 | I want to process everything without prompts                | `immich-exif -y -all`                                   |
@@ -36,7 +36,6 @@ Video metadata writing is supported for `mp4`, `mov`, and `m4v`. Other video con
 | I want to export all albums                                 | `immich-exif -y -export-dir ./export -album all`        |
 | I want duplicates auto-resolved                             | `immich-exif -y -resolve-duplicate -album <album-id>`   |
 | I want to ignore cache and re-check everything              | `immich-exif -y -force -all`                            |
-| I want full-screen mode                                     | `immich-exif -tui -all`                                 |
 
 When using `-export-dir` with exactly one `-album`, files are exported to `/<export-dir>/<album-id>/`.
 With `-export-dir` and `-all` or `-album all`, exported assets are mirrored per album folder (`/<export-dir>/<album-id>/...`), including shared assets in each album folder. Assets with no album go to `/<export-dir>/no-album/` by default and can be omitted with `-include-no-album=false`.
@@ -96,7 +95,6 @@ immich-exif [flags] [asset-ids...]
 | `-dry-run`           | `false`           | Embed EXIF locally but skip re-upload                                                 |
 | `-export-dir`        |                   | Save modified files to a directory instead of re-uploading (fails if file exists)     |
 | `-y`                 | `false`           | Auto-confirm all changes                                                              |
-| `-tui`               | `false`           | Interactive TUI mode                                                                  |
 | `-resolve-duplicate` | `false`           | On duplicate upload status, copy associations to duplicate asset and delete old asset |
 | `-include-no-album`  | `true`            | With album-mirrored export, include assets with no album under `no-album/`            |
 | `-all`               | `false`           | Select the all-assets mode; equivalent to `-album all`                                |
@@ -135,9 +133,6 @@ immich-exif -dry-run abc123
 # Non-interactive, export eligible files to album folders
 immich-exif -y -export-dir ./out -all
 
-# Full sync with TUI
-immich-exif -tui -all
-
 # Auto-confirm everything, 4 workers
 immich-exif -y -workers 4 -all
 
@@ -145,9 +140,7 @@ immich-exif -y -workers 4 -all
 immich-exif -y -force -all
 ```
 
-## UI modes
-
-### Classic mode (default)
+## Output
 
 Console output with interactive single-keypress prompts. Each asset shows a diff and waits for input:
 
@@ -160,20 +153,7 @@ Console output with interactive single-keypress prompts. Each asset shows a diff
 ```
 
 No Enter key needed. Use `-y` to auto-confirm.
-Classic interactive mode forces single-worker to avoid mixed prompts; parallel workers apply when using `-y`.
-
-### TUI mode (`--tui`)
-
-Full-screen interface with:
-
-- Progress bar
-- Color-coded diff display
-- Rolling results (hides skipped items)
-- Final summary screen with success/skip/fail counts
-- Same `y` / `s` / `q` keybindings
-- With `-y` and multiple workers, progress counts completed assets (no backward jumps)
-
-TUI mode forces single-worker to ensure sequential processing unless `-y` is used (auto-confirm allows parallel workers).
+Interactive mode forces single-worker to avoid mixed prompts; parallel workers apply when using `-y`.
 
 ## Metadata tags
 
@@ -199,6 +179,7 @@ The tool handles this carefully:
 - **If the file already has `DateTimeOriginal` but no offset**: the existing local time is preserved. The offset is computed from the difference between the file's local time and Immich's UTC time, then written as `OffsetTimeOriginal` and `TimeZoneOffset`.
 - **If the file has no date at all**: `DateTimeOriginal` is written in EXIF format (`YYYY:MM:DD HH:MM:SS`) along with the offset tags.
 - **If everything matches**: the asset is skipped.
+
 ## Architecture
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for upload strategy, processing pipeline, file structure, and API endpoints.

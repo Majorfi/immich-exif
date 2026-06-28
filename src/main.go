@@ -111,16 +111,7 @@ func main() {
 		}
 	}
 
-	var results []model.ProcessResult
-	if cfg.TUI {
-		results, err = ui.RunTUI(client, uploader, cfg, assetIDs)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-	} else {
-		results = runClassic(client, uploader, cfg, assetIDs)
-	}
+	results := runClassic(client, uploader, cfg, assetIDs)
 
 	if !cfg.ResolveDuplicate {
 		printUnresolvedDuplicateHint(results)

@@ -470,11 +470,6 @@ func TestMaybeResolveDuplicatesNowEarlyExit(t *testing.T) {
 		t.Fatalf("expected nil follow-up with -y, got %v", followUp)
 	}
 
-	tuiCfg := &model.Config{TUI: true}
-	if followUp := maybeResolveDuplicatesNow(nil, tuiCfg, results); followUp != nil {
-		t.Fatalf("expected nil follow-up with -tui, got %v", followUp)
-	}
-
 	resolveCfg := &model.Config{ResolveDuplicate: true}
 	if followUp := maybeResolveDuplicatesNow(nil, resolveCfg, results); followUp != nil {
 		t.Fatalf("expected nil follow-up with -resolve-duplicate, got %v", followUp)
@@ -966,28 +961,6 @@ func TestShouldUseStateCache(t *testing.T) {
 				t.Fatalf("expected %v, got %v", testCase.want, got)
 			}
 		})
-	}
-}
-
-func TestParseConfigAcceptsYesWithTUI(t *testing.T) {
-	defer setupConfigTest([]string{
-		"immich-exif",
-		"-url", "https://example.com",
-		"-api-key", "test-key",
-		"-all",
-		"-tui",
-		"-y",
-	})()
-
-	cfg, err := parseConfig()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !cfg.TUI {
-		t.Fatal("expected tui=true")
-	}
-	if !cfg.Yes {
-		t.Fatal("expected yes=true")
 	}
 }
 
