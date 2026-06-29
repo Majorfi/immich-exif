@@ -27,21 +27,29 @@ func (e *LogEmitter) EmitProgress(event model.ProgressEvent) {
 		e.lastAssetID = event.AssetID
 		e.lastFilename = event.Filename
 	}
-	fmt.Printf("   %s\n", event.Step)
+	fmt.Printf("%s\n", dim(event.Step))
 }
 
 func (e *LogEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	if len(event.Entries) == 0 {
+		if event.AssetID != "" {
+			e.lastAssetID = event.AssetID
+			e.lastFilename = event.Filename
+		}
+		return model.ActionConfirm
+	}
+
+	if e.lastAssetID != "" && event.AssetID != "" && event.AssetID != e.lastAssetID {
+		fmt.Print("\n\n")
+	}
 	if event.AssetID != "" {
 		e.lastAssetID = event.AssetID
 		e.lastFilename = event.Filename
 	}
 
-	if len(event.Entries) == 0 {
-		return model.ActionConfirm
-	}
 	fmt.Printf("[%d/%d] %d EXIF mismatch found for %s:\n", event.Index, event.Total, len(event.Entries), model.TruncateFilename(event.Filename, 60))
 	for _, d := range event.Entries {
 		oldArrow := dim(fmt.Sprintf("%-20s ->", d.Old))

@@ -270,3 +270,16 @@ func TestEmitAllDoneNoFailedSection(t *testing.T) {
 		t.Fatalf("should not print failed assets section: %s", output)
 	}
 }
+
+func TestEmitDiffSeparatesConsecutiveAssets(t *testing.T) {
+	emitter := &LogEmitter{AutoConfirm: true}
+	output := captureStdout(func() {
+		emitter.EmitDiff(model.DiffEvent{AssetID: "a1", Index: 1, Total: 2, Filename: "a.jpg",
+			Entries: []model.DiffEntry{{Symbol: model.DiffAdd, Tag: "Make", Old: "(none)", New: "Canon"}}})
+		emitter.EmitDiff(model.DiffEvent{AssetID: "a2", Index: 2, Total: 2, Filename: "b.jpg",
+			Entries: []model.DiffEntry{{Symbol: model.DiffAdd, Tag: "Make", Old: "(none)", New: "Nikon"}}})
+	})
+	if !strings.Contains(output, "\n\n\n[2/2]") {
+		t.Fatalf("expected a blank-line separator before the second asset, got:\n%q", output)
+	}
+}
