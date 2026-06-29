@@ -1,6 +1,8 @@
 # immich-exif
 
-## /!\ WORK IN PROGRESS. NOT PROPERLY TESTED YET /!\
+## Beta
+
+Validated end-to-end against real Immich servers (download → embed → verify → replace), but still pre-1.0. The tool replaces real assets, so always preview a run with `-dry-run` first.
 
 A CLI tool that synchronizes metadata from an [Immich](https://immich.app) photo server back into the original files.
 
@@ -12,16 +14,29 @@ Immich stores rich metadata (GPS, descriptions, ratings, camera info, dates) in 
 For each asset:
   1. Fetch metadata from Immich API
   2. Skip early if Immich has no metadata fields to embed
-  3. Download the original file
+  3. Download the original file (checksum-verified against the server)
   4. Read existing metadata tags (exiftool)
   5. Diff Immich metadata vs file metadata
   6. Show the diff, ask to confirm / skip / quit
   7. Write missing tags into the file (exiftool)
-  8. Re-upload, copy associations, restore visibility, delete the old asset
+  8. Re-upload, copy associations, restore visibility
+  9. Verify the re-uploaded asset's checksum, then delete the original
 ```
 
 Assets that already have matching metadata are skipped automatically, making it safe to run repeatedly.
 Video metadata writing is supported for `mp4`, `mov`, and `m4v`. Other video containers are skipped.
+
+## Safety
+
+The destructive path is the careful path. By default the tool will not delete an original it cannot prove was replaced intact:
+
+- **Downloads are checksum-verified** — a corrupt or truncated download is rejected before any tag is written or uploaded.
+- **Uploads are checksum-verified by default** — the re-uploaded asset is re-fetched and its checksum compared to the local file before the original is touched. A mismatch refuses to delete the original.
+- **Permanent only when verified** — a verified original is deleted permanently (the new copy is provably byte-identical). With `-no-verify-upload` the check is skipped and the original is moved to Immich's **trash** instead, where it stays recoverable.
+- **`-dry-run`** writes nothing and shows every change first.
+- The API key is refused over plaintext `http://` unless you pass `-allow-http`.
+
+An interruption (Ctrl-C) or a failed step leaves a duplicate, never a hole: the original is removed only after a successful replacement.
 
 ## Quick wins
 
@@ -87,19 +102,22 @@ immich-exif [flags] [asset-ids...]
 
 ### Flags
 
-| Flag                 | Default           | Description                                                                           |
-| -------------------- | ----------------- | ------------------------------------------------------------------------------------- |
-| `-url`               | `$IMMICH_URL`     | Immich server URL                                                                     |
-| `-api-key`           | `$IMMICH_API_KEY` | API key                                                                               |
-| `-workers`           | `1`               | Number of parallel workers                                                            |
-| `-dry-run`           | `false`           | Embed EXIF locally but skip re-upload                                                 |
-| `-export-dir`        |                   | Save modified files to a directory instead of re-uploading (fails if file exists)     |
-| `-y`                 | `false`           | Auto-confirm all changes                                                              |
-| `-resolve-duplicate` | `false`           | On duplicate upload status, copy associations to duplicate asset and delete old asset |
-| `-include-no-album`  | `true`            | With album-mirrored export, include assets with no album under `no-album/`            |
-| `-all`               | `false`           | Select the all-assets mode; equivalent to `-album all`                                |
-| `-force`             | `false`           | Force re-processing all assets, ignoring state cache                                  |
-| `-album`             |                   | Album ID to process (repeatable), or `all` as an alias of `-all`                      |
+| Flag                 | Default           | Description                                                                                                     |
+| -------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------- |
+| `-url`               | `$IMMICH_URL`     | Immich server URL                                                                                               |
+| `-api-key`           | `$IMMICH_API_KEY` | API key                                                                                                         |
+| `-immich-api`        | `auto`            | API contract: `auto` (detect from server version), `legacy`, or `v3`                                            |
+| `-workers`           | `1`               | Number of parallel workers                                                                                      |
+| `-dry-run`           | `false`           | Embed EXIF locally but skip re-upload                                                                           |
+| `-export-dir`        |                   | Save modified files to a directory instead of re-uploading (fails if file exists)                               |
+| `-y`                 | `false`           | Auto-confirm all changes                                                                                        |
+| `-no-verify-upload`  | `false`           | Skip the post-upload checksum verification; the original is moved to trash instead of being permanently deleted |
+| `-allow-http`        | `false`           | Allow a plaintext `http://` server URL (the API key is sent in clear text)                                      |
+| `-resolve-duplicate` | `false`           | On duplicate upload status, copy associations to duplicate asset and delete old asset                           |
+| `-include-no-album`  | `true`            | With album-mirrored export, include assets with no album under `no-album/`                                      |
+| `-all`               | `false`           | Select the all-assets mode; equivalent to `-album all`                                                          |
+| `-force`             | `false`           | Force re-processing all assets, ignoring state cache                                                            |
+| `-album`             |                   | Album ID to process (repeatable), or `all` as an alias of `-all`                                                |
 
 ### Asset selection
 
@@ -161,14 +179,14 @@ Interactive mode forces single-worker to avoid mixed prompts; parallel workers a
 
 Images use the full tag set below. Supported video containers (`mp4`, `mov`, `m4v`) use a compatible subset: description, rating, GPS, XMP location, dates, and camera fields.
 
-| Category    | Tags                                                                                                                                         | Notes                                             |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| GPS         | `GPSLatitude`, `GPSLatitudeRef`, `GPSLongitude`, `GPSLongitudeRef`, `XMP-exif:GPSLatitude`, `XMP-exif:GPSLongitude`                          | Ref derived from coordinate sign; XMP uses signed |
-| Description | `ImageDescription`, `XPComment`, `XMP-dc:Description`, `IPTC:Caption-Abstract`                                                               | EXIF + Windows + XMP Dublin Core + IPTC           |
-| Rating      | `Rating`, `RatingPercent`, `XMP-xmp:Rating`                                                                                                  | Percent = rating x 20; skipped when rating is 0   |
-| Location    | `IPTC:City`, `XMP-photoshop:City`, `IPTC:Province-State`, `XMP-photoshop:State`, `IPTC:Country-PrimaryLocationName`, `XMP-photoshop:Country` | Dual IPTC + XMP-photoshop                         |
-| DateTime    | `DateTimeOriginal`, `OffsetTimeOriginal`, `TimeZoneOffset`, `XMP-exif:DateTimeOriginal`, `XMP-xmp:CreateDate`                                | See below; XMP uses ISO 8601                      |
-| Camera      | `Make`, `Model`, `LensModel`                                                                                                                 | Only written if file has no existing value        |
+| Category    | Tags                                                                                                                                         | Notes                                                                                                    |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| GPS         | `GPSLatitude`, `GPSLatitudeRef`, `GPSLongitude`, `GPSLongitudeRef`, `XMP-exif:GPSLatitude`, `XMP-exif:GPSLongitude`                          | Ref derived from coordinate sign; XMP uses signed                                                        |
+| Description | `ImageDescription`, `XPComment`, `XMP-dc:Description`, `IPTC:Caption-Abstract`                                                               | EXIF + Windows + XMP Dublin Core + IPTC                                                                  |
+| Rating      | `Rating`, `RatingPercent`, `XMP-xmp:Rating`                                                                                                  | Percent = rating x 20; skipped when rating is 0; `RatingPercent` omitted for negative (rejected) ratings |
+| Location    | `IPTC:City`, `XMP-photoshop:City`, `IPTC:Province-State`, `XMP-photoshop:State`, `IPTC:Country-PrimaryLocationName`, `XMP-photoshop:Country` | Dual IPTC + XMP-photoshop                                                                                |
+| DateTime    | `DateTimeOriginal`, `OffsetTimeOriginal`, `TimeZoneOffset`, `XMP-exif:DateTimeOriginal`, `XMP-xmp:CreateDate`                                | See below; XMP uses ISO 8601                                                                             |
+| Camera      | `Make`, `Model`, `LensModel`                                                                                                                 | Only written if file has no existing value                                                               |
 
 ### DateTime and timezone handling
 
