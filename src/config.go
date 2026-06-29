@@ -12,6 +12,8 @@ import (
 	"github.com/majorfi/immich-exif/model"
 )
 
+var errShowVersion = errors.New("version requested")
+
 type stringSlice []string
 
 func (s *stringSlice) String() string { return strings.Join(*s, ",") }
@@ -31,6 +33,7 @@ func parseConfig() (*model.Config, error) {
 	var albums stringSlice
 	var noVerifyUpload bool
 	var allowHTTP bool
+	var showVersion bool
 
 	flag.StringVar(&cfg.URL, "url", os.Getenv("IMMICH_URL"), "Immich server URL (env: IMMICH_URL)")
 	flag.StringVar(&cfg.APIKey, "api-key", os.Getenv("IMMICH_API_KEY"), "API key (env: IMMICH_API_KEY)")
@@ -41,6 +44,7 @@ func parseConfig() (*model.Config, error) {
 	flag.BoolVar(&cfg.Yes, "y", false, "Auto-confirm all changes")
 	flag.BoolVar(&noVerifyUpload, "no-verify-upload", false, "Skip checksum verification; the original is moved to Immich trash instead of being permanently deleted")
 	flag.BoolVar(&allowHTTP, "allow-http", false, "Allow a plaintext http:// server URL (the API key is sent in clear text)")
+	flag.BoolVar(&showVersion, "version", false, "Print the version and exit")
 
 	flag.BoolVar(&cfg.ResolveDuplicate, "resolve-duplicate", false, "Resolve duplicate upload status by copying associations to duplicate asset and deleting old asset")
 	flag.BoolVar(&cfg.IncludeNoAlbum, "include-no-album", true, "With album-mirrored export, include assets with no album under no-album/")
@@ -55,6 +59,9 @@ func parseConfig() (*model.Config, error) {
 	}
 
 	flag.Parse()
+	if showVersion {
+		return nil, errShowVersion
+	}
 	cfg.VerifyUpload = !noVerifyUpload
 	cfg.AlbumIDs = albums
 	cfg.AssetIDs = flag.Args()
@@ -123,6 +130,21 @@ func parseConfig() (*model.Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func warnCredentialHygiene() {
+	apiKeyViaFlag := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "api-key" {
+			apiKeyViaFlag = true
+		}
+	})
+	if apiKeyViaFlag {
+		fmt.Fprintln(os.Stderr, "Warning: --api-key is visible in your shell history and process list; prefer IMMICH_API_KEY or a .env file")
+	}
+	if info, err := os.Stat(".env"); err == nil && info.Mode().Perm()&0o077 != 0 {
+		fmt.Fprintln(os.Stderr, "Warning: .env is readable by other users; run 'chmod 600 .env' to restrict it")
+	}
 }
 
 func hasAllAlbumSelector(albumIDs []string) bool {

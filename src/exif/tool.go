@@ -10,6 +10,7 @@ type ExifTagMap map[string]any
 
 var ReadExifTagsFn = ReadExifTags
 var WriteExifTagsFn = WriteExifTags
+var CheckExiftoolFn = CheckExiftool
 
 func CheckExiftool() error {
 	_, err := exec.LookPath("exiftool")

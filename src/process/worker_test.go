@@ -2,6 +2,7 @@ package process
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -69,6 +70,34 @@ func TestWorkerPoolProcessCollectsResults(t *testing.T) {
 	for i, r := range results {
 		if r.AssetID != results[i].AssetID {
 			t.Fatalf("result[%d]: unexpected asset ID %s", i, r.AssetID)
+		}
+	}
+}
+
+func TestWorkerPoolProcessConcurrent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asset := model.AssetResponse{ID: "test-id", OriginalFileName: "photo.jpg"}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(asset)
+	}))
+	defer server.Close()
+
+	client := api.NewImmichClient(server.URL, "key")
+	cfg := &model.Config{Workers: 8, DryRun: true, Yes: true}
+	pool := NewWorkerPool(client, nil, cfg, &noopEmitter{})
+
+	ids := make([]string, 50)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("id-%d", i)
+	}
+
+	results := pool.Process(ids)
+	if len(results) != len(ids) {
+		t.Fatalf("expected %d results, got %d", len(ids), len(results))
+	}
+	for i, r := range results {
+		if r.AssetID == "" {
+			t.Fatalf("result[%d] is a zero value — a worker slot was missed under concurrency", i)
 		}
 	}
 }

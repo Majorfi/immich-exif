@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/majorfi/immich-exif/api"
+	"github.com/majorfi/immich-exif/exif"
 	"github.com/majorfi/immich-exif/model"
 )
 
@@ -761,11 +763,11 @@ func TestResolveAssetIDsMirrorsAllAssetsWithoutNoAlbumBucketWhenDisabled(t *test
 	}
 }
 
-func TestRunClassicForcesSingleWorkerInInteractiveMode(t *testing.T) {
+func TestRunPipelineForcesSingleWorkerInInteractiveMode(t *testing.T) {
 	cfg := &model.Config{Workers: 4, Yes: false}
 
 	output := captureStdout(func() {
-		results := runClassic(context.Background(), nil, nil, cfg, []string{})
+		results := runPipeline(context.Background(), nil, nil, cfg, []string{})
 		if len(results) != 0 {
 			t.Fatalf("expected no results for empty asset list, got %d", len(results))
 		}
@@ -779,11 +781,11 @@ func TestRunClassicForcesSingleWorkerInInteractiveMode(t *testing.T) {
 	}
 }
 
-func TestRunClassicKeepsWorkerCountWhenAutoConfirmEnabled(t *testing.T) {
+func TestRunPipelineKeepsWorkerCountWhenAutoConfirmEnabled(t *testing.T) {
 	cfg := &model.Config{Workers: 4, Yes: true}
 
 	output := captureStdout(func() {
-		results := runClassic(context.Background(), nil, nil, cfg, []string{})
+		results := runPipeline(context.Background(), nil, nil, cfg, []string{})
 		if len(results) != 0 {
 			t.Fatalf("expected no results for empty asset list, got %d", len(results))
 		}
@@ -1093,6 +1095,27 @@ func TestParseConfigSuccess(t *testing.T) {
 	}
 }
 
+func TestParseConfigVersionFlag(t *testing.T) {
+	defer setupConfigTest([]string{"immich-exif", "-version"})()
+
+	if _, err := parseConfig(); !errors.Is(err, errShowVersion) {
+		t.Fatalf("expected errShowVersion for -version, got %v", err)
+	}
+}
+
+func TestWarnCredentialHygieneFlagsApiKeyFlag(t *testing.T) {
+	defer setupConfigTest([]string{"immich-exif", "-url", "https://example.com", "-api-key", "secret", "-all"})()
+
+	if _, err := parseConfig(); err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+
+	out := captureStderr(t, func() { warnCredentialHygiene() })
+	if !strings.Contains(out, "--api-key") {
+		t.Fatalf("expected an --api-key hygiene warning, got %q", out)
+	}
+}
+
 func TestParseConfigVerifyUploadDefaultsOn(t *testing.T) {
 	defer setupConfigTest([]string{
 		"immich-exif",
@@ -1295,5 +1318,70 @@ func TestStringSlice(t *testing.T) {
 	s.Set("b")
 	if s.String() != "a,b" {
 		t.Fatalf("expected a,b, got %q", s.String())
+	}
+}
+
+func TestRunVersionFlag(t *testing.T) {
+	defer setupConfigTest([]string{"immich-exif", "-version"})()
+	var code int
+	out := captureStdout(func() { code = run() })
+	if code != 0 {
+		t.Fatalf("expected exit 0 for -version, got %d", code)
+	}
+	if !strings.Contains(out, "immich-exif") {
+		t.Fatalf("expected version banner, got %q", out)
+	}
+}
+
+func TestRunConfigError(t *testing.T) {
+	defer setupConfigTest([]string{"immich-exif"})()
+	var code int
+	captureStderr(t, func() { code = run() })
+	if code != 1 {
+		t.Fatalf("expected exit 1 on invalid config, got %d", code)
+	}
+}
+
+func TestMaybeResolveDuplicatesNowCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cfg := &model.Config{}
+	results := []model.ProcessResult{{AssetID: "a1", Status: model.StatusSkipped, DuplicateID: "d1"}}
+	if got := maybeResolveDuplicatesNow(ctx, nil, cfg, results); got != nil {
+		t.Fatalf("expected nil follow-up when the context is cancelled, got %v", got)
+	}
+}
+
+func TestRunDryRunHappyPath(t *testing.T) {
+	origCheck := exif.CheckExiftoolFn
+	origRead := exif.ReadExifTagsFn
+	origWrite := exif.WriteExifTagsFn
+	exif.CheckExiftoolFn = func() error { return nil }
+	exif.ReadExifTagsFn = func(string) (exif.ExifTagMap, error) { return exif.ExifTagMap{}, nil }
+	exif.WriteExifTagsFn = func(string, []string) error { return nil }
+	defer func() {
+		exif.CheckExiftoolFn = origCheck
+		exif.ReadExifTagsFn = origRead
+		exif.WriteExifTagsFn = origWrite
+	}()
+
+	desc := "a description"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/server/about":
+			json.NewEncoder(w).Encode(model.ServerAbout{Version: "v2.5.6"})
+		case strings.HasSuffix(r.URL.Path, "/original"):
+			w.Write([]byte("imagedata"))
+		default:
+			json.NewEncoder(w).Encode(model.AssetResponse{ID: "a1", OriginalFileName: "p.jpg", ExifInfo: &model.ExifInfo{Description: &desc}})
+		}
+	}))
+	defer server.Close()
+
+	defer setupConfigTest([]string{"immich-exif", "-url", server.URL, "-api-key", "k", "-allow-http", "-y", "-dry-run", "a1"})()
+	var code int
+	captureStdout(func() { code = run() })
+	if code != 0 {
+		t.Fatalf("expected exit 0 for a dry-run, got %d", code)
 	}
 }

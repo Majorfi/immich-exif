@@ -92,3 +92,22 @@ func TestSupportsVideoMetadataEmbedding(t *testing.T) {
 		})
 	}
 }
+
+func TestIsUnsupportedVideoAsset(t *testing.T) {
+	cases := []struct {
+		name  string
+		asset AssetResponse
+		want  bool
+	}{
+		{name: "supported mp4", asset: AssetResponse{OriginalFileName: "a.mp4", OriginalMimeType: "video/mp4"}, want: false},
+		{name: "unsupported webm", asset: AssetResponse{OriginalFileName: "c.webm", OriginalMimeType: "video/webm"}, want: true},
+		{name: "photo", asset: AssetResponse{OriginalFileName: "p.jpg", OriginalMimeType: "image/jpeg"}, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsUnsupportedVideoAsset(tc.asset); got != tc.want {
+				t.Fatalf("expected %v, got %v", tc.want, got)
+			}
+		})
+	}
+}

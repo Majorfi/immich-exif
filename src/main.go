@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -17,6 +18,8 @@ import (
 
 var snapshotAssetFn = state.SnapshotAsset
 
+var version = "dev"
+
 func main() {
 	os.Exit(run())
 }
@@ -24,11 +27,17 @@ func main() {
 func run() int {
 	cfg, err := parseConfig()
 	if err != nil {
+		if errors.Is(err, errShowVersion) {
+			fmt.Println("immich-exif " + version)
+			return 0
+		}
 		fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
 		return 1
 	}
 
-	if err := exif.CheckExiftool(); err != nil {
+	warnCredentialHygiene()
+
+	if err := exif.CheckExiftoolFn(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
 	}
@@ -119,7 +128,7 @@ func run() int {
 		}
 	}
 
-	results := runClassic(ctx, client, uploader, cfg, assetIDs)
+	results := runPipeline(ctx, client, uploader, cfg, assetIDs)
 
 	if !cfg.ResolveDuplicate {
 		printUnresolvedDuplicateHint(results)
@@ -157,7 +166,7 @@ func rememberAssetSnapshot(asset model.AssetResponse, snapshots map[string]strin
 	return snap, true
 }
 
-func runClassic(ctx context.Context, client *api.ImmichClient, uploader process.Uploader, cfg *model.Config, assetIDs []string) []model.ProcessResult {
+func runPipeline(ctx context.Context, client *api.ImmichClient, uploader process.Uploader, cfg *model.Config, assetIDs []string) []model.ProcessResult {
 	if !cfg.Yes && cfg.Workers > 1 {
 		fmt.Printf("Interactive mode forces single worker (requested: %d)\n", cfg.Workers)
 		cfg.Workers = 1

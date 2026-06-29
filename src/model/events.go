@@ -28,12 +28,6 @@ type DiffEvent struct {
 	Entries  []DiffEntry
 }
 
-type ResultEvent struct {
-	Index  int
-	Total  int
-	Result ProcessResult
-}
-
 type AllDoneEvent struct {
 	Results []ProcessResult
 }
@@ -49,6 +43,5 @@ const (
 type EventEmitter interface {
 	EmitProgress(event ProgressEvent)
 	EmitDiff(event DiffEvent) DiffAction
-	EmitResult(event ResultEvent)
 	EmitAllDone(event AllDoneEvent)
 }

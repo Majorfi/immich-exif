@@ -13,11 +13,10 @@ type Uploader interface {
 }
 
 type UploadOutcome struct {
-	NewID          string
-	Message        string
-	Cacheable      bool
-	RejectedReason string
-	DuplicateID    string
+	NewID       string
+	Message     string
+	Cacheable   bool
+	DuplicateID string
 }
 
 type ModernUploader struct {
@@ -60,21 +59,19 @@ func (u *ModernUploader) Upload(filePath string, asset *model.AssetResponse, emi
 		}
 		emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Upload rejected. Reason: %s (duplicate asset ID: %s)", status, newID)})
 		return UploadOutcome{
-			NewID:          newID,
-			Message:        fmt.Sprintf("upload status=%s (asset ID: %s), skipped copy/delete", status, model.ShortID(newID)),
-			Cacheable:      false,
-			RejectedReason: status,
-			DuplicateID:    newID,
+			NewID:       newID,
+			Message:     fmt.Sprintf("upload status=%s (asset ID: %s), skipped copy/delete", status, model.ShortID(newID)),
+			Cacheable:   false,
+			DuplicateID: newID,
 		}, nil
 	}
 
 	if status == "replaced" {
 		emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Upload returned status: %s (asset ID: %s), skipping copy/delete", status, newID)})
 		return UploadOutcome{
-			NewID:          newID,
-			Message:        fmt.Sprintf("upload status=%s (asset ID: %s), skipped copy/delete", status, model.ShortID(newID)),
-			Cacheable:      false,
-			RejectedReason: status,
+			NewID:     newID,
+			Message:   fmt.Sprintf("upload status=%s (asset ID: %s), skipped copy/delete", status, model.ShortID(newID)),
+			Cacheable: false,
 		}, nil
 	}
 

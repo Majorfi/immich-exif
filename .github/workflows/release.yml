@@ -4,7 +4,14 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "src/**"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Exact release tag, e.g. v1.2.0 (leave empty to auto-bump the patch)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -29,14 +36,24 @@ jobs:
 
       - name: Create new tag
         id: create_tag
+        env:
+          MANUAL_VERSION: ${{ github.event.inputs.version }}
+          LATEST_TAG: ${{ steps.get_latest_tag.outputs.latest_tag }}
         run: |
-          latest_tag=${{ steps.get_latest_tag.outputs.latest_tag }}
-          major=$(echo $latest_tag | cut -d. -f1 | tr -d 'v')
-          minor=$(echo $latest_tag | cut -d. -f2)
-          patch=$(echo $latest_tag | cut -d. -f3)
-          new_patch=$((patch + 1))
-          new_tag="v$major.$minor.$new_patch"
-          echo "new_tag=$new_tag" >> $GITHUB_OUTPUT
+          if [ -n "$MANUAL_VERSION" ]; then
+            if ! echo "$MANUAL_VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "Invalid version '$MANUAL_VERSION' (expected vMAJOR.MINOR.PATCH)" >&2
+              exit 1
+            fi
+            new_tag="$MANUAL_VERSION"
+          else
+            major=$(echo "$LATEST_TAG" | cut -d. -f1 | tr -d 'v')
+            minor=$(echo "$LATEST_TAG" | cut -d. -f2)
+            patch=$(echo "$LATEST_TAG" | cut -d. -f3)
+            new_patch=$((patch + 1))
+            new_tag="v$major.$minor.$new_patch"
+          fi
+          echo "new_tag=$new_tag" >> "$GITHUB_OUTPUT"
 
       - name: Create and push tag
         run: |
