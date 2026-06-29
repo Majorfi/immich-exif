@@ -111,6 +111,23 @@ IMMICH_URL=https://your-immich-server.com
 IMMICH_API_KEY=your-api-key
 ```
 
+## API key permissions
+
+On Immich 1.118+ you can scope the API key to exactly what the tool needs (older servers issue all-or-nothing keys). A normal run that re-uploads and replaces assets uses:
+
+| Permission       | Why                                                       |
+| ---------------- | --------------------------------------------------------- |
+| `server.about`   | Connectivity and server-version detection                 |
+| `asset.read`     | Read asset metadata and page the library and albums       |
+| `asset.download` | Download the original file                                |
+| `asset.upload`   | Re-upload the metadata-corrected file                     |
+| `asset.copy`     | Copy associations (albums, favorites, …) to the new asset |
+| `asset.update`   | Restore visibility for archived or hidden assets          |
+| `asset.delete`   | Remove the old original after a verified replacement      |
+| `album.read`     | Resolve `-album` / `-album all` selections                |
+
+Read-only modes need less: `-dry-run` and `-export-dir` never write to the server, so they only require `server.about`, `asset.read`, `asset.download`, and `album.read` (drop `album.read` too if you only pass asset IDs).
+
 ## Usage
 
 ```
