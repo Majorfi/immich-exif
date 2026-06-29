@@ -19,6 +19,9 @@ type LogEmitter struct {
 }
 
 func (e *LogEmitter) EmitProgress(event model.ProgressEvent) {
+	if e.AutoConfirm {
+		return
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -35,20 +38,14 @@ func (e *LogEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
 	defer e.mu.Unlock()
 
 	if len(event.Entries) == 0 {
-		if event.AssetID != "" {
-			e.lastAssetID = event.AssetID
-			e.lastFilename = event.Filename
-		}
+		e.rememberAsset(event.AssetID, event.Filename)
 		return model.ActionConfirm
 	}
 
 	if e.lastAssetID != "" && event.AssetID != "" && event.AssetID != e.lastAssetID {
 		fmt.Print("\n\n")
 	}
-	if event.AssetID != "" {
-		e.lastAssetID = event.AssetID
-		e.lastFilename = event.Filename
-	}
+	e.rememberAsset(event.AssetID, event.Filename)
 
 	fmt.Printf("[%d/%d] %d EXIF mismatch found for %s:\n", event.Index, event.Total, len(event.Entries), model.TruncateFilename(event.Filename, 60))
 	for _, d := range event.Entries {
@@ -66,8 +63,18 @@ func (e *LogEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
 		return model.ActionQuit
 	}
 	fmt.Println()
-	fmt.Println()
+	if action == model.ActionConfirm {
+		fmt.Println()
+	}
 	return action
+}
+
+func (e *LogEmitter) rememberAsset(assetID, filename string) {
+	if assetID == "" {
+		return
+	}
+	e.lastAssetID = assetID
+	e.lastFilename = filename
 }
 
 func (e *LogEmitter) EmitAllDone(event model.AllDoneEvent) {
