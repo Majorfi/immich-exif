@@ -17,9 +17,13 @@ jobs:
         with:
           go-version-file: src/go.mod
 
-      - name: Run tests
+      - name: Vet
         working-directory: src
-        run: go test ./...
+        run: go vet ./...
+
+      - name: Run tests (race detector)
+        working-directory: src
+        run: go test -race ./...
 
       - name: Coverage gate
         working-directory: src

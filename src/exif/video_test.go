@@ -114,3 +114,36 @@ func TestHasAssetMetadataToEmbedForUnsupportedVideo(t *testing.T) {
 		t.Fatal("expected unsupported video metadata to be ignored")
 	}
 }
+
+func TestCompareVideoDateTimeRewritesStaleValue(t *testing.T) {
+	dt := "2025-12-10T15:56:36Z"
+	exifInfo := &model.ExifInfo{DateTimeOriginal: &dt}
+	existing := ExifTagMap{
+		"DateTimeOriginal": "2001:01:01 00:00:00",
+	}
+
+	change := compareVideoDateTime(exifInfo, existing)
+	if change == nil {
+		t.Fatal("expected a change when the existing datetime is stale")
+	}
+
+	hasArg := false
+	for _, arg := range change.Args {
+		if arg == "-DateTimeOriginal="+dt {
+			hasArg = true
+		}
+	}
+	if !hasArg {
+		t.Fatalf("expected -DateTimeOriginal=%s, got %v", dt, change.Args)
+	}
+
+	foundChange := false
+	for _, d := range change.Diffs {
+		if d.Tag == "DateTimeOriginal" && d.Symbol == model.DiffChange && d.Old == "2001:01:01 00:00:00" {
+			foundChange = true
+		}
+	}
+	if !foundChange {
+		t.Fatalf("expected a DiffChange entry for the stale DateTimeOriginal, got %v", change.Diffs)
+	}
+}

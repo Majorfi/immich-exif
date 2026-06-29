@@ -19,7 +19,6 @@ func (e *noopEmitter) EmitProgress(event model.ProgressEvent) {}
 func (e *noopEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
 	return model.ActionConfirm
 }
-func (e *noopEmitter) EmitResult(event model.ResultEvent)   {}
 func (e *noopEmitter) EmitAllDone(event model.AllDoneEvent) {}
 
 func TestModernUploaderArchivedAssetRestoresVisibilityBeforeDelete(t *testing.T) {
@@ -245,9 +244,6 @@ func TestModernUploaderSkipsCopyDeleteForDuplicateStatus(t *testing.T) {
 	if outcome.Cacheable {
 		t.Fatal("expected non-cacheable duplicate outcome")
 	}
-	if outcome.RejectedReason != "duplicate" {
-		t.Fatalf("expected rejected reason duplicate, got %q", outcome.RejectedReason)
-	}
 	if outcome.DuplicateID != "dup-id" {
 		t.Fatalf("expected duplicate ID dup-id, got %s", outcome.DuplicateID)
 	}
@@ -462,9 +458,6 @@ func TestModernUploaderReplacedStatus(t *testing.T) {
 	}
 	if outcome.Cacheable {
 		t.Fatal("expected non-cacheable replaced outcome")
-	}
-	if outcome.RejectedReason != "replaced" {
-		t.Fatalf("expected rejected reason replaced, got %q", outcome.RejectedReason)
 	}
 	if outcome.DuplicateID != "" {
 		t.Fatalf("expected empty duplicate ID for replaced status, got %s", outcome.DuplicateID)

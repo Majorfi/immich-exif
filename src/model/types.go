@@ -124,6 +124,7 @@ type Config struct {
 	Yes          bool
 	VerifyUpload bool
 
+	ShowVersion           bool
 	ResolveDuplicate      bool
 	IncludeNoAlbum        bool
 	AssetIDs              []string

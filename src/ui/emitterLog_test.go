@@ -192,19 +192,6 @@ func TestEmitAllDonePrintsSummary(t *testing.T) {
 	}
 }
 
-func TestEmitResultDoesNotPanic(t *testing.T) {
-	emitter := &LogEmitter{}
-	emitter.EmitResult(model.ResultEvent{
-		Index: 1,
-		Total: 5,
-		Result: model.ProcessResult{
-			AssetID: "test-id",
-			Status:  model.StatusSuccess,
-			Message: "ok",
-		},
-	})
-}
-
 func TestDecodeKeyMapsExplicitKeys(t *testing.T) {
 	cases := []struct {
 		b    byte

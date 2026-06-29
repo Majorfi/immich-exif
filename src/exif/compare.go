@@ -318,10 +318,6 @@ func CompareSimpleString(tag, exifKey string, value *string, existing ExifTagMap
 	}
 }
 
-func HasMetadataToEmbed(exif *model.ExifInfo) bool {
-	return len(CollectExifArgs(CompareMetadata(exif, nil))) > 0
-}
-
 func CollectExifArgs(changes []TagChange) []string {
 	var args []string
 	for _, c := range changes {

@@ -761,11 +761,11 @@ func TestResolveAssetIDsMirrorsAllAssetsWithoutNoAlbumBucketWhenDisabled(t *test
 	}
 }
 
-func TestRunClassicForcesSingleWorkerInInteractiveMode(t *testing.T) {
+func TestRunPipelineForcesSingleWorkerInInteractiveMode(t *testing.T) {
 	cfg := &model.Config{Workers: 4, Yes: false}
 
 	output := captureStdout(func() {
-		results := runClassic(context.Background(), nil, nil, cfg, []string{})
+		results := runPipeline(context.Background(), nil, nil, cfg, []string{})
 		if len(results) != 0 {
 			t.Fatalf("expected no results for empty asset list, got %d", len(results))
 		}
@@ -779,11 +779,11 @@ func TestRunClassicForcesSingleWorkerInInteractiveMode(t *testing.T) {
 	}
 }
 
-func TestRunClassicKeepsWorkerCountWhenAutoConfirmEnabled(t *testing.T) {
+func TestRunPipelineKeepsWorkerCountWhenAutoConfirmEnabled(t *testing.T) {
 	cfg := &model.Config{Workers: 4, Yes: true}
 
 	output := captureStdout(func() {
-		results := runClassic(context.Background(), nil, nil, cfg, []string{})
+		results := runPipeline(context.Background(), nil, nil, cfg, []string{})
 		if len(results) != 0 {
 			t.Fatalf("expected no results for empty asset list, got %d", len(results))
 		}
@@ -1090,6 +1090,31 @@ func TestParseConfigSuccess(t *testing.T) {
 	}
 	if !cfg.IncludeNoAlbum {
 		t.Fatal("expected includeNoAlbum=true")
+	}
+}
+
+func TestParseConfigVersionFlag(t *testing.T) {
+	defer setupConfigTest([]string{"immich-exif", "-version"})()
+
+	cfg, err := parseConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.ShowVersion {
+		t.Fatal("expected ShowVersion=true for -version")
+	}
+}
+
+func TestWarnCredentialHygieneFlagsApiKeyFlag(t *testing.T) {
+	defer setupConfigTest([]string{"immich-exif", "-url", "https://example.com", "-api-key", "secret", "-all"})()
+
+	if _, err := parseConfig(); err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+
+	out := captureStderr(t, func() { warnCredentialHygiene() })
+	if !strings.Contains(out, "--api-key") {
+		t.Fatalf("expected an --api-key hygiene warning, got %q", out)
 	}
 }
 

@@ -36,7 +36,6 @@ func (wp *WorkerPool) Process(assetIDs []string) []model.ProcessResult {
 
 	emitResult := func(index int, result model.ProcessResult) {
 		results[index] = result
-		wp.emitter.EmitResult(model.ResultEvent{Index: index + 1, Total: total, Result: result})
 	}
 
 	for w := 0; w < wp.workers; w++ {

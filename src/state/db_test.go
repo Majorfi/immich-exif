@@ -118,6 +118,34 @@ func TestSaveAndIsUpToDate(t *testing.T) {
 	}
 }
 
+func TestStateDBIsolatesByServerURL(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test-state.db")
+	snapshot := `{"description":"test"}`
+
+	dbA, err := OpenStateDB(dbPath, "https://a.example.com")
+	if err != nil {
+		t.Fatalf("open A: %v", err)
+	}
+	defer dbA.Close()
+
+	if err := dbA.Save("asset-1", "success", snapshot); err != nil {
+		t.Fatalf("save under A: %v", err)
+	}
+
+	dbB, err := OpenStateDB(dbPath, "https://b.example.com")
+	if err != nil {
+		t.Fatalf("open B: %v", err)
+	}
+	defer dbB.Close()
+
+	if !dbA.IsUpToDate("asset-1", snapshot) {
+		t.Fatal("server A must see its own saved asset as up to date")
+	}
+	if dbB.IsUpToDate("asset-1", snapshot) {
+		t.Fatal("server B must NOT see an asset saved under server A; the (serverURL, assetID) key isolates servers")
+	}
+}
+
 func TestIsUpToDateReturnsFalseWhenExifChanged(t *testing.T) {
 	db := openTestDB(t)
 

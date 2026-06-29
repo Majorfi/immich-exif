@@ -61,8 +61,6 @@ func (e *LogEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
 	return action
 }
 
-func (e *LogEmitter) EmitResult(event model.ResultEvent) {}
-
 func (e *LogEmitter) EmitAllDone(event model.AllDoneEvent) {
 	e.mu.Lock()
 	e.lastAssetID = ""
