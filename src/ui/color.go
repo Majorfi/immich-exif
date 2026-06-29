@@ -14,7 +14,7 @@ const (
 	seqDim    = "\033[2m"
 )
 
-var isTerminal = func() bool { return term.IsTerminal(int(os.Stdout.Fd())) }
+var isTerminalFn = func() bool { return term.IsTerminal(int(os.Stdout.Fd())) }
 
 // colorEnabled reports whether ANSI color should be emitted: only when stdout is
 // a real terminal and NO_COLOR is unset (https://no-color.org).
@@ -22,7 +22,7 @@ func colorEnabled() bool {
 	if os.Getenv("NO_COLOR") != "" {
 		return false
 	}
-	return isTerminal()
+	return isTerminalFn()
 }
 
 func colorize(seq, s string) string {
