@@ -163,6 +163,20 @@ func TestEmitProgressGroupsConsecutiveStepsForSameAsset(t *testing.T) {
 	}
 }
 
+func TestEmitProgressSuppressedInAutoConfirm(t *testing.T) {
+	emitter := &LogEmitter{AutoConfirm: true}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{
+			AssetID:  "abcdefghij",
+			Filename: "photo.jpg",
+			Step:     "Uploading new asset...",
+		})
+	})
+	if output != "" {
+		t.Fatalf("expected no progress output under -y, got: %q", output)
+	}
+}
+
 func TestEmitAllDonePrintsSummary(t *testing.T) {
 	emitter := &LogEmitter{}
 	output := captureStdout(func() {
@@ -281,5 +295,17 @@ func TestEmitDiffSeparatesConsecutiveAssets(t *testing.T) {
 	})
 	if !strings.Contains(output, "\n\n\n[2/2]") {
 		t.Fatalf("expected a blank-line separator before the second asset, got:\n%q", output)
+	}
+}
+
+func TestEmitDiffEmptyEntriesStillRemembersAsset(t *testing.T) {
+	emitter := &LogEmitter{AutoConfirm: true}
+	output := captureStdout(func() {
+		emitter.EmitDiff(model.DiffEvent{AssetID: "a1", Filename: "a.jpg"})
+		emitter.EmitDiff(model.DiffEvent{AssetID: "a2", Index: 1, Total: 1, Filename: "b.jpg",
+			Entries: []model.DiffEntry{{Symbol: model.DiffAdd, Tag: "Make", Old: "(none)", New: "Nikon"}}})
+	})
+	if !strings.HasPrefix(output, "\n\n") {
+		t.Fatalf("expected the empty-entries asset to be remembered so the next asset gets a separator, got:\n%q", output)
 	}
 }
