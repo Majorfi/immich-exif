@@ -95,6 +95,11 @@ const FLAGS = [
     desc: "Allow a plaintext http:// server URL — the API key is sent in clear text.",
   },
   {
+    flag: "-list-albums",
+    def: "false",
+    desc: "List your albums (ID and name) and exit.",
+  },
+  {
     flag: "-resolve-duplicate",
     def: "false",
     desc: "On a duplicate upload, move associations to the duplicate and delete the old asset.",
@@ -365,6 +370,11 @@ immich-exif -all                    # the whole library`}</Code>
               <span className="kbd">-album all</span> are the same selector.
               Assets with no metadata to embed, and assets already in sync, are
               skipped either way.
+            </p>
+            <p>
+              Need an album ID? List them with{" "}
+              <span className="kbd">-list-albums</span> — it prints each
+              album&apos;s ID, name and asset count, then exits.
             </p>
           </section>
 

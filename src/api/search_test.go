@@ -673,3 +673,29 @@ func TestListAllAssetIDsSkipsUnsupportedVideoContainers(t *testing.T) {
 		t.Fatalf("expected 0 stateSkipped, got %d", stats.StateSkipped)
 	}
 }
+
+func TestListAlbumsReturnsAlbums(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/albums" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]model.AlbumResponse{
+			{ID: "a1", AlbumName: "First", AssetCount: 5},
+			{ID: "a2", AlbumName: "Second", AssetCount: 0},
+		})
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "key")
+	albums, err := c.ListAlbums()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(albums) != 2 {
+		t.Fatalf("expected 2 albums, got %d", len(albums))
+	}
+	if albums[0].AlbumName != "First" || albums[0].AssetCount != 5 {
+		t.Fatalf("unexpected first album: %+v", albums[0])
+	}
+}

@@ -37,6 +37,15 @@ func run() int {
 
 	warnCredentialHygiene()
 
+	if cfg.ListAlbums {
+		client := api.NewImmichClient(cfg.URL, cfg.APIKey)
+		if err := client.ResolveAPIMode(cfg.ImmichAPI); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot reach Immich server: %v\n", err)
+			return 1
+		}
+		return listAlbums(client)
+	}
+
 	if err := exif.CheckExiftoolFn(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
@@ -152,6 +161,22 @@ func run() int {
 		if r.Status == model.StatusFailed {
 			return 1
 		}
+	}
+	return 0
+}
+
+func listAlbums(client *api.ImmichClient) int {
+	albums, err := client.ListAlbums()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error listing albums: %v\n", err)
+		return 1
+	}
+	if len(albums) == 0 {
+		fmt.Println("No albums found.")
+		return 0
+	}
+	for _, album := range albums {
+		fmt.Printf("%s  %s (%d)\n", album.ID, album.AlbumName, album.AssetCount)
 	}
 	return 0
 }

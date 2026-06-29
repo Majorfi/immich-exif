@@ -117,7 +117,7 @@ func parseNextPage(nextPage *string) (int, bool, error) {
 	return page, false, nil
 }
 
-func (c *ImmichClient) ListAlbumIDs() ([]string, error) {
+func (c *ImmichClient) ListAlbums() ([]model.AlbumResponse, error) {
 	req, err := c.newRequest(http.MethodGet, "/albums", nil)
 	if err != nil {
 		return nil, err
@@ -126,6 +126,14 @@ func (c *ImmichClient) ListAlbumIDs() ([]string, error) {
 
 	var albums []model.AlbumResponse
 	if err := c.doJSON(req, &albums); err != nil {
+		return nil, err
+	}
+	return albums, nil
+}
+
+func (c *ImmichClient) ListAlbumIDs() ([]string, error) {
+	albums, err := c.ListAlbums()
+	if err != nil {
 		return nil, err
 	}
 

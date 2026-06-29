@@ -54,6 +54,7 @@ type SearchAssets struct {
 
 type AlbumResponse struct {
 	ID         string          `json:"id"`
+	AlbumName  string          `json:"albumName"`
 	AssetCount int             `json:"assetCount"`
 	Assets     []AssetResponse `json:"assets"`
 }
@@ -124,6 +125,7 @@ type Config struct {
 	Yes          bool
 	VerifyUpload bool
 
+	ListAlbums            bool
 	ResolveDuplicate      bool
 	IncludeNoAlbum        bool
 	AssetIDs              []string

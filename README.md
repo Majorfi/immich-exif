@@ -147,6 +147,7 @@ immich-exif [flags] [asset-ids...]
 | `-y`                 | `false`           | Auto-confirm all changes                                                                                        |
 | `-no-verify-upload`  | `false`           | Skip the post-upload checksum verification; the original is moved to trash instead of being permanently deleted |
 | `-allow-http`        | `false`           | Allow a plaintext `http://` server URL (the API key is sent in clear text)                                      |
+| `-list-albums`       | `false`           | List your albums (ID and name) and exit                                                                         |
 | `-resolve-duplicate` | `false`           | On duplicate upload status, copy associations to duplicate asset and delete old asset                           |
 | `-include-no-album`  | `true`            | With album-mirrored export, include assets with no album under `no-album/`                                      |
 | `-all`               | `false`           | Select the all-assets mode; equivalent to `-album all`                                                          |
@@ -172,6 +173,14 @@ immich-exif -album all
 
 # Select the all-assets mode
 immich-exif -all
+```
+
+To find album IDs, list them first:
+
+```bash
+immich-exif -list-albums
+# 4c1f…  Vacation 2024 (312)
+# 9ab2…  Family (87)
 ```
 
 `-all` and `-album all` are equivalent selectors. The tool still only exports/processes assets that pass its normal filters.
