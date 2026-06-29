@@ -113,7 +113,7 @@ IMMICH_API_KEY=your-api-key
 
 ## API key permissions
 
-On Immich 1.118+ you can scope the API key to exactly what the tool needs (older servers issue all-or-nothing keys). A normal run that re-uploads and replaces assets uses:
+On Immich 1.113+ you can scope the API key to exactly what the tool needs (older servers issue all-or-nothing keys). A normal run that re-uploads and replaces assets uses:
 
 | Permission       | Why                                                       |
 | ---------------- | --------------------------------------------------------- |

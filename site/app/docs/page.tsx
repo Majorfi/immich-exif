@@ -305,7 +305,7 @@ IMMICH_API_KEY=your-api-key`}</Code>
           <section className="space-y-4">
             <H2 id="permissions">API key permissions</H2>
             <p>
-              On Immich 1.118+ you can scope the key to exactly what the tool
+              On Immich 1.113+ you can scope the key to exactly what the tool
               needs (older servers issue all-or-nothing keys). A normal run that
               re-uploads and replaces assets uses:
             </p>
