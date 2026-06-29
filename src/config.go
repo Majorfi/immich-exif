@@ -12,6 +12,8 @@ import (
 	"github.com/majorfi/immich-exif/model"
 )
 
+var errShowVersion = errors.New("version requested")
+
 type stringSlice []string
 
 func (s *stringSlice) String() string { return strings.Join(*s, ",") }
@@ -58,7 +60,7 @@ func parseConfig() (*model.Config, error) {
 
 	flag.Parse()
 	if showVersion {
-		return &model.Config{ShowVersion: true}, nil
+		return nil, errShowVersion
 	}
 	cfg.VerifyUpload = !noVerifyUpload
 	cfg.AlbumIDs = albums

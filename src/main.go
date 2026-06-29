@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -26,13 +27,12 @@ func main() {
 func run() int {
 	cfg, err := parseConfig()
 	if err != nil {
+		if errors.Is(err, errShowVersion) {
+			fmt.Println("immich-exif " + version)
+			return 0
+		}
 		fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
 		return 1
-	}
-
-	if cfg.ShowVersion {
-		fmt.Println("immich-exif " + version)
-		return 0
 	}
 
 	warnCredentialHygiene()

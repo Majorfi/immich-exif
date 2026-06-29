@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -1097,12 +1098,8 @@ func TestParseConfigSuccess(t *testing.T) {
 func TestParseConfigVersionFlag(t *testing.T) {
 	defer setupConfigTest([]string{"immich-exif", "-version"})()
 
-	cfg, err := parseConfig()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !cfg.ShowVersion {
-		t.Fatal("expected ShowVersion=true for -version")
+	if _, err := parseConfig(); !errors.Is(err, errShowVersion) {
+		t.Fatalf("expected errShowVersion for -version, got %v", err)
 	}
 }
 

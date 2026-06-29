@@ -3,6 +3,7 @@ package exif
 import (
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/majorfi/immich-exif/model"
@@ -127,13 +128,7 @@ func TestCompareVideoDateTimeRewritesStaleValue(t *testing.T) {
 		t.Fatal("expected a change when the existing datetime is stale")
 	}
 
-	hasArg := false
-	for _, arg := range change.Args {
-		if arg == "-DateTimeOriginal="+dt {
-			hasArg = true
-		}
-	}
-	if !hasArg {
+	if !slices.Contains(change.Args, "-DateTimeOriginal="+dt) {
 		t.Fatalf("expected -DateTimeOriginal=%s, got %v", dt, change.Args)
 	}
 
