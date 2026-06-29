@@ -25,6 +25,7 @@ export const metadata: Metadata = {
 const TOC = [
   { id: "install", label: "Installation" },
   { id: "configure", label: "Configuration" },
+  { id: "permissions", label: "API key permissions" },
   { id: "quick-start", label: "Quick start" },
   { id: "selecting", label: "Selecting assets" },
   { id: "flags", label: "Flags" },
@@ -103,6 +104,29 @@ const FLAGS = [
     def: "false",
     desc: "Ignore the state cache and re-check every asset.",
   },
+];
+
+const PERMISSIONS = [
+  { perm: "server.about", why: "Connectivity and server-version detection." },
+  {
+    perm: "asset.read",
+    why: "Read asset metadata and page the library and albums.",
+  },
+  { perm: "asset.download", why: "Download the original file." },
+  { perm: "asset.upload", why: "Re-upload the metadata-corrected file." },
+  {
+    perm: "asset.copy",
+    why: "Copy associations (albums, favorites, …) to the new asset.",
+  },
+  {
+    perm: "asset.update",
+    why: "Restore visibility for archived or hidden assets.",
+  },
+  {
+    perm: "asset.delete",
+    why: "Remove the old original after a verified replacement.",
+  },
+  { perm: "album.read", why: "Resolve -album and -album all selections." },
 ];
 
 const TAGS = [
@@ -276,6 +300,43 @@ go build -o immich-exif .`}</Code>
             <Code>{`# .env
 IMMICH_URL=https://your-immich-server.com
 IMMICH_API_KEY=your-api-key`}</Code>
+          </section>
+
+          <section className="space-y-4">
+            <H2 id="permissions">API key permissions</H2>
+            <p>
+              On Immich 1.113+ you can scope the key to exactly what the tool
+              needs (older servers issue all-or-nothing keys). A normal run that
+              re-uploads and replaces assets uses:
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[13px]">
+                <thead>
+                  <tr className="border-b border-line text-left text-ink">
+                    <th className="py-2 pr-4 font-semibold">Permission</th>
+                    <th className="py-2 font-semibold">Why</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {PERMISSIONS.map((p) => (
+                    <tr key={p.perm} className="border-b border-line align-top">
+                      <td className="py-2 pr-4 font-mono text-ink">{p.perm}</td>
+                      <td className="py-2">{p.why}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p>
+              <span className="kbd">-dry-run</span> and{" "}
+              <span className="kbd">-export-dir</span> never write to the
+              server, so they only need{" "}
+              <span className="kbd">server.about</span>,{" "}
+              <span className="kbd">asset.read</span>,{" "}
+              <span className="kbd">asset.download</span>, and{" "}
+              <span className="kbd">album.read</span> (drop the last one if you
+              pass asset IDs directly).
+            </p>
           </section>
 
           <section className="space-y-4">
