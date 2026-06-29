@@ -147,3 +147,21 @@ func TestCompareVideoDateTimeRewritesStaleValue(t *testing.T) {
 		t.Fatalf("expected a DiffChange entry for the stale DateTimeOriginal, got %v", change.Diffs)
 	}
 }
+
+func TestCompareAssetMetadataRoutesVideoAndPhoto(t *testing.T) {
+	desc := "hello"
+	unsupported := model.AssetResponse{OriginalFileName: "c.webm", OriginalMimeType: "video/webm", ExifInfo: &model.ExifInfo{Description: &desc}}
+	if changes := CompareAssetMetadata(unsupported, ExifTagMap{}); changes != nil {
+		t.Fatalf("expected nil for unsupported video, got %v", changes)
+	}
+
+	video := model.AssetResponse{OriginalFileName: "c.mp4", OriginalMimeType: "video/mp4", ExifInfo: &model.ExifInfo{Description: &desc}}
+	if len(CollectExifArgs(CompareAssetMetadata(video, ExifTagMap{}))) == 0 {
+		t.Fatal("expected metadata args for a supported video")
+	}
+
+	photo := model.AssetResponse{OriginalFileName: "p.jpg", OriginalMimeType: "image/jpeg", ExifInfo: &model.ExifInfo{Description: &desc}}
+	if len(CollectExifArgs(CompareAssetMetadata(photo, ExifTagMap{}))) == 0 {
+		t.Fatal("expected metadata args for a photo")
+	}
+}

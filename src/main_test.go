@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/majorfi/immich-exif/api"
+	"github.com/majorfi/immich-exif/exif"
 	"github.com/majorfi/immich-exif/model"
 )
 
@@ -1320,5 +1321,70 @@ func TestStringSlice(t *testing.T) {
 	s.Set("b")
 	if s.String() != "a,b" {
 		t.Fatalf("expected a,b, got %q", s.String())
+	}
+}
+
+func TestRunVersionFlag(t *testing.T) {
+	defer setupConfigTest([]string{"immich-exif", "-version"})()
+	var code int
+	out := captureStdout(func() { code = run() })
+	if code != 0 {
+		t.Fatalf("expected exit 0 for -version, got %d", code)
+	}
+	if !strings.Contains(out, "immich-exif") {
+		t.Fatalf("expected version banner, got %q", out)
+	}
+}
+
+func TestRunConfigError(t *testing.T) {
+	defer setupConfigTest([]string{"immich-exif"})()
+	var code int
+	captureStderr(t, func() { code = run() })
+	if code != 1 {
+		t.Fatalf("expected exit 1 on invalid config, got %d", code)
+	}
+}
+
+func TestMaybeResolveDuplicatesNowCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cfg := &model.Config{}
+	results := []model.ProcessResult{{AssetID: "a1", Status: model.StatusSkipped, DuplicateID: "d1"}}
+	if got := maybeResolveDuplicatesNow(ctx, nil, cfg, results); got != nil {
+		t.Fatalf("expected nil follow-up when the context is cancelled, got %v", got)
+	}
+}
+
+func TestRunDryRunHappyPath(t *testing.T) {
+	origCheck := exif.CheckExiftoolFn
+	origRead := exif.ReadExifTagsFn
+	origWrite := exif.WriteExifTagsFn
+	exif.CheckExiftoolFn = func() error { return nil }
+	exif.ReadExifTagsFn = func(string) (exif.ExifTagMap, error) { return exif.ExifTagMap{}, nil }
+	exif.WriteExifTagsFn = func(string, []string) error { return nil }
+	defer func() {
+		exif.CheckExiftoolFn = origCheck
+		exif.ReadExifTagsFn = origRead
+		exif.WriteExifTagsFn = origWrite
+	}()
+
+	desc := "a description"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/server/about":
+			json.NewEncoder(w).Encode(model.ServerAbout{Version: "v2.5.6"})
+		case strings.HasSuffix(r.URL.Path, "/original"):
+			w.Write([]byte("imagedata"))
+		default:
+			json.NewEncoder(w).Encode(model.AssetResponse{ID: "a1", OriginalFileName: "p.jpg", ExifInfo: &model.ExifInfo{Description: &desc}})
+		}
+	}))
+	defer server.Close()
+
+	defer setupConfigTest([]string{"immich-exif", "-url", server.URL, "-api-key", "k", "-allow-http", "-y", "-dry-run", "a1"})()
+	var code int
+	captureStdout(func() { code = run() })
+	if code != 0 {
+		t.Fatalf("expected exit 0 for a dry-run, got %d", code)
 	}
 }

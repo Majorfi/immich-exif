@@ -37,7 +37,7 @@ func run() int {
 
 	warnCredentialHygiene()
 
-	if err := exif.CheckExiftool(); err != nil {
+	if err := exif.CheckExiftoolFn(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
 	}

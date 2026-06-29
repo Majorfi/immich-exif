@@ -30,6 +30,6 @@ jobs:
         run: |
           go test ./... -coverprofile=coverage.out
           totalCoverage=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%","",$3); print $3}')
-          minimumCoverage=80.0
+          minimumCoverage=88.0
           awk -v totalCoverage="$totalCoverage" -v minimumCoverage="$minimumCoverage" 'BEGIN { if (totalCoverage+0 < minimumCoverage+0) exit 1 }'
           echo "Coverage ${totalCoverage}% (minimum ${minimumCoverage}%)"
