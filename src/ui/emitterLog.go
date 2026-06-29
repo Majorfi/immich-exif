@@ -23,34 +23,43 @@ func (e *LogEmitter) EmitProgress(event model.ProgressEvent) {
 	defer e.mu.Unlock()
 
 	if event.Filename != "" && (event.AssetID != e.lastAssetID || event.Filename != e.lastFilename) {
-		fmt.Printf("=> %s | %s\n", model.ShortID(event.AssetID), model.TruncateFilename(event.Filename, 60))
+		fmt.Printf("%s %s | %s\n", dim("=>"), model.ShortID(event.AssetID), model.TruncateFilename(event.Filename, 60))
 		e.lastAssetID = event.AssetID
 		e.lastFilename = event.Filename
 	}
-	fmt.Printf("   %s\n", event.Step)
+	fmt.Printf("%s\n", dim(event.Step))
 }
 
 func (e *LogEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	if len(event.Entries) == 0 {
+		if event.AssetID != "" {
+			e.lastAssetID = event.AssetID
+			e.lastFilename = event.Filename
+		}
+		return model.ActionConfirm
+	}
+
+	if e.lastAssetID != "" && event.AssetID != "" && event.AssetID != e.lastAssetID {
+		fmt.Print("\n\n")
+	}
 	if event.AssetID != "" {
 		e.lastAssetID = event.AssetID
 		e.lastFilename = event.Filename
 	}
 
-	if len(event.Entries) == 0 {
-		return model.ActionConfirm
-	}
 	fmt.Printf("[%d/%d] %d EXIF mismatch found for %s:\n", event.Index, event.Total, len(event.Entries), model.TruncateFilename(event.Filename, 60))
 	for _, d := range event.Entries {
-		fmt.Printf("    %s %-22s %-20s -> %s\n", string(d.Symbol), d.Tag, d.Old, d.New)
+		oldArrow := dim(fmt.Sprintf("%-20s ->", d.Old))
+		fmt.Printf("    %s %-22s %s %s\n", diffSymbol(string(d.Symbol)), d.Tag, oldArrow, d.New)
 	}
 	if e.AutoConfirm {
 		fmt.Println()
 		return model.ActionConfirm
 	}
-	fmt.Print("\n[y] confirm  [s] skip  [q] quit: ")
+	fmt.Printf("\n[%s] confirm  [%s] skip  [%s] quit: ", green("y"), amber("s"), red("q"))
 	action, err := readSingleKey()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\nInput error: %v\n", err)
@@ -79,13 +88,17 @@ func (e *LogEmitter) EmitAllDone(event model.AllDoneEvent) {
 		}
 	}
 
-	fmt.Printf("\nDone: %d succeeded, %d skipped, %d failed\n", succeeded, skipped, failed)
+	failedText := fmt.Sprintf("%d failed", failed)
+	if failed > 0 {
+		failedText = red(failedText)
+	}
+	fmt.Printf("\nDone: %s, %d skipped, %s\n", green(fmt.Sprintf("%d succeeded", succeeded)), skipped, failedText)
 
 	if failed > 0 {
-		fmt.Println("\nFailed assets:")
+		fmt.Println("\n" + red("Failed assets:"))
 		for _, r := range event.Results {
 			if r.Status == model.StatusFailed {
-				fmt.Printf("  %s: %s\n", model.ShortID(r.AssetID), r.Message)
+				fmt.Printf("  %s: %s\n", red(model.ShortID(r.AssetID)), r.Message)
 			}
 		}
 	}
