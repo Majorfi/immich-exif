@@ -44,7 +44,8 @@ func (e *LogEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
 	}
 	fmt.Printf("[%d/%d] %d EXIF mismatch found for %s:\n", event.Index, event.Total, len(event.Entries), model.TruncateFilename(event.Filename, 60))
 	for _, d := range event.Entries {
-		fmt.Printf("    %s %-22s %s %s %s\n", diffSymbol(string(d.Symbol)), d.Tag, dim(fmt.Sprintf("%-20s", d.Old)), dim("->"), d.New)
+		oldArrow := dim(fmt.Sprintf("%-20s ->", d.Old))
+		fmt.Printf("    %s %-22s %s %s\n", diffSymbol(string(d.Symbol)), d.Tag, oldArrow, d.New)
 	}
 	if e.AutoConfirm {
 		fmt.Println()

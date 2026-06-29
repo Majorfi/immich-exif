@@ -2,10 +2,15 @@ package ui
 
 import "testing"
 
-func TestColorEnabledWrapsWithAnsi(t *testing.T) {
+func withTerminal(t *testing.T, on bool) {
+	t.Helper()
 	orig := isTerminalFn
-	isTerminalFn = func() bool { return true }
-	defer func() { isTerminalFn = orig }()
+	isTerminalFn = func() bool { return on }
+	t.Cleanup(func() { isTerminalFn = orig })
+}
+
+func TestColorEnabledWrapsWithAnsi(t *testing.T) {
+	withTerminal(t, true)
 	t.Setenv("NO_COLOR", "")
 
 	if got := green("x"); got != seqGreen+"x"+ansiReset {
@@ -23,9 +28,7 @@ func TestColorEnabledWrapsWithAnsi(t *testing.T) {
 }
 
 func TestColorDisabledByNoColor(t *testing.T) {
-	orig := isTerminalFn
-	isTerminalFn = func() bool { return true }
-	defer func() { isTerminalFn = orig }()
+	withTerminal(t, true)
 	t.Setenv("NO_COLOR", "1")
 
 	if got := red("x"); got != "x" {
@@ -34,9 +37,7 @@ func TestColorDisabledByNoColor(t *testing.T) {
 }
 
 func TestColorDisabledWithoutTerminal(t *testing.T) {
-	orig := isTerminalFn
-	isTerminalFn = func() bool { return false }
-	defer func() { isTerminalFn = orig }()
+	withTerminal(t, false)
 	t.Setenv("NO_COLOR", "")
 
 	if got := dim("x"); got != "x" {
