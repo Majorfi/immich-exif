@@ -44,6 +44,7 @@ func parseConfig() (*model.Config, error) {
 	flag.BoolVar(&cfg.Yes, "y", false, "Auto-confirm all changes")
 	flag.BoolVar(&noVerifyUpload, "no-verify-upload", false, "Skip checksum verification; the original is moved to Immich trash instead of being permanently deleted")
 	flag.BoolVar(&allowHTTP, "allow-http", false, "Allow a plaintext http:// server URL (the API key is sent in clear text)")
+	flag.BoolVar(&cfg.ListAlbums, "list-albums", false, "List your albums (ID and name) and exit")
 	flag.BoolVar(&showVersion, "version", false, "Print the version and exit")
 
 	flag.BoolVar(&cfg.ResolveDuplicate, "resolve-duplicate", false, "Resolve duplicate upload status by copying associations to duplicate asset and deleting old asset")
@@ -101,6 +102,10 @@ func parseConfig() (*model.Config, error) {
 
 	if strings.HasPrefix(strings.ToLower(cfg.URL), "http://") && !allowHTTP {
 		return nil, fmt.Errorf("refusing to send the API key over plaintext http:// (%s); use https:// or pass --allow-http to override", cfg.URL)
+	}
+
+	if cfg.ListAlbums {
+		return cfg, nil
 	}
 
 	selectionModes := 0

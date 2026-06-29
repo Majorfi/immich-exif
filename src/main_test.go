@@ -1385,3 +1385,42 @@ func TestRunDryRunHappyPath(t *testing.T) {
 		t.Fatalf("expected exit 0 for a dry-run, got %d", code)
 	}
 }
+
+func TestParseConfigListAlbumsNeedsNoSelector(t *testing.T) {
+	defer setupConfigTest([]string{"immich-exif", "-url", "https://example.com", "-api-key", "k", "-list-albums"})()
+
+	cfg, err := parseConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.ListAlbums {
+		t.Fatal("expected ListAlbums=true")
+	}
+}
+
+func TestRunListAlbums(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/server/about":
+			json.NewEncoder(w).Encode(model.ServerAbout{Version: "v2.5.6"})
+		case "/api/albums":
+			json.NewEncoder(w).Encode([]model.AlbumResponse{
+				{ID: "alb-1", AlbumName: "Vacation", AssetCount: 12},
+				{ID: "alb-2", AlbumName: "Family", AssetCount: 3},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	defer setupConfigTest([]string{"immich-exif", "-url", server.URL, "-api-key", "k", "-allow-http", "-list-albums"})()
+	var code int
+	out := captureStdout(func() { code = run() })
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+	if !strings.Contains(out, "alb-1") || !strings.Contains(out, "Vacation") {
+		t.Fatalf("expected album listing in output, got %q", out)
+	}
+}
