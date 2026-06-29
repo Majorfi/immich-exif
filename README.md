@@ -216,6 +216,8 @@ Console output with interactive single-keypress prompts. Each asset shows a diff
 No Enter key needed. Use `-y` to auto-confirm.
 Interactive mode forces single-worker to avoid mixed prompts; parallel workers apply when using `-y`.
 
+Output is colorized when stdout is a terminal (added tags in green, changed tags in amber, failures in red). Colors are disabled automatically when the output is piped or redirected, and when `NO_COLOR` is set.
+
 ## Metadata tags
 
 ### Tags written
