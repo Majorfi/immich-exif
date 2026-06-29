@@ -73,11 +73,28 @@ When using `--all` or `-album all`, the tool maintains a local SQLite state cach
 
 ## Prerequisites
 
-- [Go 1.24+](https://golang.org/dl/)
-- [exiftool](https://exiftool.org/) installed and available in `PATH`
 - An Immich server with a valid API key
+- [exiftool](https://exiftool.org/) on your `PATH` (the Docker image already bundles it)
+- [Go 1.24+](https://golang.org/dl/) only if you build from source
 
 ## Installation
+
+### Prebuilt binary
+
+Download the archive for your OS and architecture from the [latest release](https://github.com/Majorfi/immich-exif/releases/latest), extract it, and put `immich-exif` on your `PATH`. Install `exiftool` separately.
+
+### Docker (bundles exiftool)
+
+```bash
+docker run --rm \
+  -e IMMICH_URL=https://your-immich-server.com \
+  -e IMMICH_API_KEY=your-api-key \
+  ghcr.io/majorfi/immich-exif:latest -dry-run <asset-id>
+```
+
+Mount a volume (`-v "$PWD/out:/out"`) when using `-export-dir /out`.
+
+### Build from source
 
 ```bash
 cd src
@@ -201,3 +218,7 @@ The tool handles this carefully:
 ## Architecture
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for upload strategy, processing pipeline, file structure, and API endpoints.
+
+## License
+
+Licensed under the [GNU General Public License v3.0](LICENSE).
