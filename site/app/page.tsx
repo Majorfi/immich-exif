@@ -108,7 +108,7 @@ const STEPS = [
 const FAQ = [
   {
     q: "Is it free?",
-    a: "Yes. immich-exif is open source: build it from source or grab a release binary. No paywall.",
+    a: "Yes. Immich Exif is open source: build it from source or grab a release binary. No paywall.",
   },
   {
     q: "Does it touch my originals?",
@@ -163,7 +163,7 @@ const jsonLd = {
   "@graph": [
     {
       "@type": "SoftwareApplication",
-      name: "immich-exif",
+      name: "Immich Exif",
       applicationCategory: "UtilitiesApplication",
       operatingSystem: "macOS, Linux, Windows",
       url: SITE_URL,
@@ -198,7 +198,7 @@ export default function Home() {
       <nav className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
         <p className="flex items-center gap-2 text-[15px] font-semibold">
           <img src="/logo.svg" alt="" className="h-7 w-7" />
-          <span className="font-mono">immich-exif</span>
+          <span className="font-mono">Immich Exif</span>
         </p>
         <div className="flex items-center gap-2">
           <a
@@ -240,7 +240,7 @@ export default function Home() {
             Immich
           </a>{" "}
           server knows where, when and what. The original files usually
-          don&apos;t. immich-exif reads that metadata and writes it back into
+          don&apos;t. Immich Exif reads that metadata and writes it back into
           the photo itself, so it travels with the file.
         </p>
         <div className="mt-8 flex flex-col items-center gap-3">
@@ -284,7 +284,7 @@ export default function Home() {
             Everything Immich knows, in the file
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-center text-[15px] text-fog">
-            Immich keeps all that metadata in its database. immich-exif diffs it
+            Immich keeps all that metadata in its database. Immich Exif diffs it
             against what&apos;s actually in each file and embeds only
             what&apos;s missing.
           </p>
@@ -321,7 +321,7 @@ export default function Home() {
             </h2>
             <p className="mt-4 text-[15px] leading-relaxed text-fog">
               Metadata locked in a server is metadata you lose the day you
-              export, migrate, or hand a photo to someone else. immich-exif
+              export, migrate, or hand a photo to someone else. Immich Exif
               bakes it into the file with{" "}
               <a
                 href="https://exiftool.org"
@@ -473,7 +473,7 @@ export default function Home() {
             href="#install"
             className="btn-primary rounded-full px-6 py-3 text-[14px] font-medium"
           >
-            Install immich-exif
+            Install Immich Exif
           </a>
           <a
             href={GITHUB}
@@ -490,7 +490,7 @@ export default function Home() {
         <div className="mx-auto max-w-5xl px-6 py-10">
           <p className="flex items-center gap-2 text-[15px] font-semibold">
             <img src="/logo.svg" alt="" className="h-7 w-7" />
-            <span className="font-mono">immich-exif</span>
+            <span className="font-mono">Immich Exif</span>
           </p>
           <div className="mt-5 flex flex-col justify-between gap-3 text-[12.5px] text-fog sm:flex-row">
             <p>

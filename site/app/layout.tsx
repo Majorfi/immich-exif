@@ -18,19 +18,19 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: "immich-exif: write your Immich metadata back into your files",
+  title: "Immich Exif: write your Immich metadata back into your files",
   description:
     "Write the GPS, dates, descriptions and ratings your self-hosted Immich server knows back into your original photos and videos with exiftool. Open source.",
   alternates: { canonical: "/" },
   openGraph: {
-    title: "immich-exif: metadata back in your files",
+    title: "Immich Exif: metadata back in your files",
     description:
-      "Immich knows where, when and what. immich-exif writes that metadata into the file itself, so it travels with the photo.",
+      "Immich knows where, when and what. Immich Exif writes that metadata into the file itself, so it travels with the photo.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "immich-exif: metadata back in your files",
+    title: "Immich Exif: metadata back in your files",
     description:
       "Write the GPS, dates and descriptions Immich knows back into your original files.",
   },
