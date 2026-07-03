@@ -338,6 +338,22 @@ func TestCopyAssetSendsCorrectPayload(t *testing.T) {
 	}
 }
 
+func TestCopyAssetUsesPatchOnV3(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Fatalf("expected PATCH on v3, got %s", r.Method)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "test-key")
+	c.apiV3 = true
+	if err := c.CopyAsset("src", "dst"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestDeleteAssetsSendsCorrectPayload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete {

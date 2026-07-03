@@ -177,8 +177,55 @@ func TestListAllAssetIDsPaginates(t *testing.T) {
 	if stats.StateSkipped != 0 {
 		t.Fatalf("expected 0 stateSkipped, got %d", stats.StateSkipped)
 	}
-	if callCount != 2 {
-		t.Fatalf("expected 2 API calls, got %d", callCount)
+	if callCount != 6 {
+		t.Fatalf("expected 6 API calls (3 visibilities x 2 pages), got %d", callCount)
+	}
+}
+
+func TestListAllAssetIDsEnumeratesVisibilities(t *testing.T) {
+	desc := "d"
+	byVisibility := map[string][]model.AssetResponse{
+		"timeline": {{ID: "a1", ExifInfo: &model.ExifInfo{Description: &desc}}},
+		"archive":  {{ID: "a2", ExifInfo: &model.ExifInfo{Description: &desc}}},
+		"hidden":   {{ID: "a3", ExifInfo: &model.ExifInfo{Description: &desc}}},
+	}
+	seen := map[string]bool{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body model.SearchMetadataRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Visibility == "locked" {
+			t.Fatal("locked visibility must never be queried")
+		}
+		seen[body.Visibility] = true
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(model.SearchMetadataResponse{
+			Assets: model.SearchAssets{Items: byVisibility[body.Visibility]},
+		})
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "key")
+	ids, _, err := c.ListAllAssetIDs(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := map[string]bool{}
+	for _, id := range ids {
+		got[id] = true
+	}
+	for _, want := range []string{"a1", "a2", "a3"} {
+		if !got[want] {
+			t.Fatalf("expected -all to include archived/hidden asset %s, got %v", want, ids)
+		}
+	}
+	for _, vis := range []string{"timeline", "archive", "hidden"} {
+		if !seen[vis] {
+			t.Fatalf("expected visibility %q to be queried, saw %v", vis, seen)
+		}
 	}
 }
 

@@ -168,7 +168,7 @@ func (c *ImmichClient) CopyAsset(sourceID, destinationID string) error {
 	if err != nil {
 		return err
 	}
-	req, err := c.newRequest(http.MethodPut, "/assets/copy", bytes.NewReader(jsonBody))
+	req, err := c.newRequest(c.writeMethod(), "/assets/copy", bytes.NewReader(jsonBody))
 	if err != nil {
 		return err
 	}
@@ -214,7 +214,7 @@ func (c *ImmichClient) UpdateAssetVisibility(assetID, visibility string) error {
 	if err != nil {
 		return err
 	}
-	req, err := c.newRequest(http.MethodPut, "/assets", bytes.NewReader(jsonBody))
+	req, err := c.newRequest(c.writeMethod(), "/assets", bytes.NewReader(jsonBody))
 	if err != nil {
 		return err
 	}
