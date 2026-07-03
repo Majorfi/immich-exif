@@ -76,9 +76,14 @@ func (c *ImmichClient) forEachSearchPage(albumIDs []string, withExif bool, visib
 func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool) ([]string, AssetSelectionStats, error) {
 	var allIDs []string
 	stats := AssetSelectionStats{}
+	seen := map[string]bool{}
 
-	err := c.forEachSearchPage(nil, true, "", func(items []model.AssetResponse) {
+	handle := func(items []model.AssetResponse) {
 		for _, asset := range items {
+			if seen[asset.ID] {
+				continue
+			}
+			seen[asset.ID] = true
 			if model.IsUnsupportedVideoAsset(asset) {
 				stats.UnsupportedVideoSkipped++
 				continue
@@ -93,9 +98,14 @@ func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool
 			}
 			allIDs = append(allIDs, asset.ID)
 		}
-	})
-	if err != nil {
-		return nil, AssetSelectionStats{}, err
+	}
+
+	// search/metadata filters by a single visibility, so enumerate them to cover
+	// archived and hidden assets, not just the timeline default.
+	for _, visibility := range searchVisibilities {
+		if err := c.forEachSearchPage(nil, true, visibility, handle); err != nil {
+			return nil, AssetSelectionStats{}, err
+		}
 	}
 
 	return allIDs, stats, nil
@@ -178,17 +188,17 @@ func (c *ImmichClient) GetAlbumAssets(albumID string) ([]string, error) {
 	return ids, nil
 }
 
-// albumSearchVisibilities are the visibilities enumerated when paging an album
-// via search/metadata. The endpoint filters by a single visibility (defaulting
-// to timeline), so each must be queried to cover archived and hidden members.
+// searchVisibilities are the visibilities enumerated when paging assets via
+// search/metadata (for -all and per-album). The endpoint filters by a single
+// visibility, so each must be queried to cover archived and hidden members.
 // "locked" is excluded: it requires an elevated session.
-var albumSearchVisibilities = []string{"timeline", "archive", "hidden"}
+var searchVisibilities = []string{"timeline", "archive", "hidden"}
 
 func (c *ImmichClient) searchAlbumAssetIDs(albumID string) ([]string, error) {
 	var ids []string
 	seen := map[string]bool{}
 
-	for _, visibility := range albumSearchVisibilities {
+	for _, visibility := range searchVisibilities {
 		err := c.forEachSearchPage([]string{albumID}, false, visibility, func(items []model.AssetResponse) {
 			for _, asset := range items {
 				if seen[asset.ID] {

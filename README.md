@@ -150,7 +150,7 @@ immich-exif [flags] [asset-ids...]
 | `-list-albums`       | `false`           | List your albums (ID and name) and exit                                                                         |
 | `-resolve-duplicate` | `false`           | On duplicate upload status, copy associations to duplicate asset and delete old asset                           |
 | `-include-no-album`  | `true`            | With album-mirrored export, include assets with no album under `no-album/`                                      |
-| `-all`               | `false`           | Select the all-assets mode; equivalent to `-album all`                                                          |
+| `-all`               | `false`           | Select the all-assets mode (timeline, archived and hidden); equivalent to `-album all`                          |
 | `-force`             | `false`           | Force re-processing all assets, ignoring state cache                                                            |
 | `-album`             |                   | Album ID to process (repeatable), or `all` as an alias of `-all`                                                |
 
