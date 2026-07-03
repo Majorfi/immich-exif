@@ -11,9 +11,12 @@ type AssetResponse struct {
 	Checksum         string    `json:"checksum"`
 	FileCreatedAt    time.Time `json:"fileCreatedAt"`
 	FileModifiedAt   time.Time `json:"fileModifiedAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 	IsFavorite       bool      `json:"isFavorite"`
 	IsArchived       bool      `json:"isArchived"`
+	IsTrashed        bool      `json:"isTrashed"`
 	Visibility       string    `json:"visibility"`
+	LivePhotoVideoID string    `json:"livePhotoVideoId"`
 	ExifInfo         *ExifInfo `json:"exifInfo"`
 }
 
@@ -26,6 +29,7 @@ type ExifInfo struct {
 	State            *string  `json:"state"`
 	Country          *string  `json:"country"`
 	DateTimeOriginal *string  `json:"dateTimeOriginal"`
+	TimeZone         *string  `json:"timeZone"`
 	Make             *string  `json:"make"`
 	Model            *string  `json:"model"`
 	LensModel        *string  `json:"lensModel"`

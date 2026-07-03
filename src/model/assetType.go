@@ -48,3 +48,11 @@ func AssetMimeType(asset AssetResponse) string {
 func AssetExtension(asset AssetResponse) string {
 	return strings.ToLower(filepath.Ext(strings.TrimSpace(asset.OriginalFileName)))
 }
+
+// IsLivePhotoMotionCandidate reports whether an asset looks like the motion
+// half of a live photo: a hidden video. Replacing it would give it a new ID
+// and permanently sever the still photo's livePhotoVideoId link, so these are
+// skipped rather than processed.
+func IsLivePhotoMotionCandidate(asset AssetResponse) bool {
+	return IsVideoAsset(asset) && strings.EqualFold(strings.TrimSpace(asset.Visibility), "hidden")
+}

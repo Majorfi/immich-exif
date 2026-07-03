@@ -71,19 +71,18 @@ func TestReadExifTagsMergesSupplementalTags(t *testing.T) {
 	}
 }
 
-func TestReadExifTagsIgnoresSupplementalErrors(t *testing.T) {
+// A failed supplemental read must propagate: swallowing it would make every
+// XMP/IPTC key look absent and re-replace already-synced assets.
+func TestReadExifTagsPropagatesSupplementalErrors(t *testing.T) {
 	fakeBinDir := setupSupplementalFailureExifFakeTool(t)
 	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	values, err := ReadExifTags("file.jpg")
-	if err != nil {
-		t.Fatalf("base exif read should still succeed when supplemental fails: %v", err)
+	_, err := ReadExifTags("file.jpg")
+	if err == nil {
+		t.Fatal("expected error when the supplemental read fails")
 	}
-	if values["Rating"] != float64(3) {
-		t.Fatalf("expected base rating, got %v", values["Rating"])
-	}
-	if _, exists := values["XMP-dc:Description"]; exists {
-		t.Fatalf("did not expect supplemental tags after supplemental error, got %v", values)
+	if !strings.Contains(err.Error(), "supplemental") {
+		t.Fatalf("expected supplemental read error, got: %v", err)
 	}
 }
 

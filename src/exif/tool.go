@@ -3,6 +3,7 @@ package exif
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os/exec"
 )
 
@@ -42,11 +43,12 @@ func ReadExifTags(filePath string) (ExifTagMap, error) {
 		"-XMP-exif:DateTimeOriginal",
 		"-XMP-xmp:CreateDate",
 	})
-	if err == nil {
-		for key, value := range supplementalTags {
-			baseTags[key] = value
-		}
+	if err != nil {
+		// A missing supplemental read would make every XMP/IPTC key look absent
+		// and silently degrade change detection into needless re-replacements.
+		return nil, fmt.Errorf("supplemental exif read: %w", err)
 	}
+	maps.Copy(baseTags, supplementalTags)
 
 	return baseTags, nil
 }
