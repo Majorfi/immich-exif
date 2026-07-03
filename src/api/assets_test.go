@@ -540,3 +540,97 @@ func TestUpdateAssetVisibilitySendsCorrectPayload(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestUpdateAssetVisibilityUsesPatchOnV3(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Fatalf("expected PATCH on v3, got %s", r.Method)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "test-key")
+	c.apiV3 = true
+	if err := c.UpdateAssetVisibility("asset-1", "archive"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUploadAssetForwardsLivePhotoVideoID(t *testing.T) {
+	var receivedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"new-id","status":"created"}`))
+	}))
+	defer server.Close()
+
+	filePath := filepath.Join(t.TempDir(), "photo.heic")
+	if err := os.WriteFile(filePath, []byte("data"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	c := NewImmichClient(server.URL, "test-key")
+	c.apiV3 = true
+	asset := &model.AssetResponse{
+		ID:               "asset-id",
+		LivePhotoVideoID: "motion-id",
+		FileCreatedAt:    time.Now(),
+		FileModifiedAt:   time.Now(),
+	}
+
+	if _, err := c.UploadAsset(filePath, asset); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	body := string(receivedBody)
+	if !strings.Contains(body, `name="livePhotoVideoId"`) || !strings.Contains(body, "motion-id") {
+		t.Fatal("expected livePhotoVideoId to be forwarded so the pair survives replacement")
+	}
+}
+
+func TestUploadAssetOmitsEmptyLivePhotoVideoID(t *testing.T) {
+	var receivedBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"new-id","status":"created"}`))
+	}))
+	defer server.Close()
+
+	filePath := filepath.Join(t.TempDir(), "photo.jpg")
+	if err := os.WriteFile(filePath, []byte("data"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	c := NewImmichClient(server.URL, "test-key")
+	c.apiV3 = true
+	asset := &model.AssetResponse{ID: "asset-id", FileCreatedAt: time.Now(), FileModifiedAt: time.Now()}
+
+	if _, err := c.UploadAsset(filePath, asset); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(string(receivedBody), `name="livePhotoVideoId"`) {
+		t.Fatal("must not send an empty livePhotoVideoId field")
+	}
+}
+
+func TestGetAssetEscapesIDInPath(t *testing.T) {
+	var escapedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		escapedPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"weird"}`))
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "test-key")
+	if _, err := c.GetAsset("weird/../id?x=1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if escapedPath != "/api/assets/weird%2F..%2Fid%3Fx=1" {
+		t.Fatalf("expected the ID to be path-escaped, server saw: %s", escapedPath)
+	}
+}

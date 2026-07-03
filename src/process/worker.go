@@ -32,7 +32,6 @@ func (wp *WorkerPool) Process(assetIDs []string) []model.ProcessResult {
 	jobs := make(chan int)
 	results := make([]model.ProcessResult, total)
 	var wg sync.WaitGroup
-	wp.cancelled.Store(false)
 
 	emitResult := func(index int, result model.ProcessResult) {
 		results[index] = result

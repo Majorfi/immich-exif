@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/majorfi/immich-exif/api"
 	"github.com/majorfi/immich-exif/exif"
@@ -508,9 +509,17 @@ func TestProcessAssetErrorMessageContainsAssetID(t *testing.T) {
 	}
 }
 
+func withStubbedSleep(t *testing.T) {
+	t.Helper()
+	orig := sleepFn
+	sleepFn = func(time.Duration) {}
+	t.Cleanup(func() { sleepFn = orig })
+}
+
 func TestProcessAssetRetriesUploadOnTransientFailure(t *testing.T) {
 	server := assetServerWithExif()
 	defer server.Close()
+	withStubbedSleep(t)
 
 	defer withMockExiftool(
 		func(string) (exif.ExifTagMap, error) { return exif.ExifTagMap{}, nil },
@@ -541,6 +550,7 @@ func TestProcessAssetRetriesUploadOnTransientFailure(t *testing.T) {
 func TestProcessAssetRetriesExhausted(t *testing.T) {
 	server := assetServerWithExif()
 	defer server.Close()
+	withStubbedSleep(t)
 
 	defer withMockExiftool(
 		func(string) (exif.ExifTagMap, error) { return exif.ExifTagMap{}, nil },
@@ -605,6 +615,7 @@ func TestProcessAssetUploadNonCacheableIsSkipped(t *testing.T) {
 func TestProcessAssetUploadFails(t *testing.T) {
 	server := assetServerWithExif()
 	defer server.Close()
+	withStubbedSleep(t)
 
 	defer withMockExiftool(
 		func(string) (exif.ExifTagMap, error) { return exif.ExifTagMap{}, nil },

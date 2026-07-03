@@ -247,3 +247,90 @@ func TestDoJSONReturnsErrorOnBadJSON(t *testing.T) {
 		t.Fatal("expected error for bad JSON")
 	}
 }
+
+func TestClientRefusesCrossOriginRedirect(t *testing.T) {
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("the redirect target must never be contacted")
+	}))
+	defer other.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/api/assets/x", http.StatusMovedPermanently)
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "secret-key")
+	req, _ := c.newRequest(http.MethodGet, "/assets/x", nil)
+	_, err := c.doRequest(req)
+	if err == nil {
+		t.Fatal("expected cross-origin redirect to be refused")
+	}
+	if !strings.Contains(err.Error(), "refusing redirect") {
+		t.Fatalf("expected redirect refusal, got: %v", err)
+	}
+}
+
+func TestClientFollowsSameOriginRedirect(t *testing.T) {
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	mux.HandleFunc("/api/old", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, server.URL+"/api/new", http.StatusMovedPermanently)
+	})
+	mux.HandleFunc("/api/new", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	c := NewImmichClient(server.URL, "key")
+	req, _ := c.newRequest(http.MethodGet, "/old", nil)
+	resp, err := c.doRequest(req)
+	if err != nil {
+		t.Fatalf("same-origin redirect must be allowed: %v", err)
+	}
+	resp.Body.Close()
+}
+
+func TestDoRequestTruncatesAndSanitizesErrorBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("\x1b[2Jbad "))
+		_, _ = w.Write(make([]byte, 32*1024))
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "key")
+	req, _ := c.newRequest(http.MethodGet, "/test", nil)
+	_, err := c.doRequest(req)
+	if err == nil {
+		t.Fatal("expected error for 502")
+	}
+	if strings.Contains(err.Error(), "\x1b") {
+		t.Fatalf("expected escape sequences to be stripped from the error body")
+	}
+	if len(err.Error()) > 10*1024 {
+		t.Fatalf("expected the error body to be capped, got %d bytes", len(err.Error()))
+	}
+}
+
+func TestParseVersionMajorMinor(t *testing.T) {
+	cases := []struct {
+		version string
+		major   int
+		minor   int
+		ok      bool
+	}{
+		{"1.133.0", 1, 133, true},
+		{"v1.119.0", 1, 119, true},
+		{"2.5.6", 2, 5, true},
+		{"3.0.0-rc.3", 3, 0, true},
+		{"3", 3, 0, true},
+		{"garbage", 0, 0, false},
+		{"", 0, 0, false},
+	}
+	for _, tc := range cases {
+		major, minor, ok := parseVersionMajorMinor(tc.version)
+		if major != tc.major || minor != tc.minor || ok != tc.ok {
+			t.Fatalf("parseVersionMajorMinor(%q) = (%d, %d, %v), want (%d, %d, %v)", tc.version, major, minor, ok, tc.major, tc.minor, tc.ok)
+		}
+	}
+}

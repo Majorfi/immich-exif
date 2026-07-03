@@ -1424,3 +1424,25 @@ func TestRunListAlbums(t *testing.T) {
 		t.Fatalf("expected album listing in output, got %q", out)
 	}
 }
+
+// A context cancelled before (or during) the run must cancel the pool: every
+// pending asset resolves as "user cancelled" and nothing touches the server.
+func TestRunPipelineCancelledContextCancelsAllAssets(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cfg := &model.Config{Workers: 2, Yes: true}
+	var results []model.ProcessResult
+	captureStdout(func() {
+		results = runPipeline(ctx, nil, nil, cfg, []string{"a1", "a2", "a3"})
+	})
+
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+	for i, r := range results {
+		if r.Message != "user cancelled" {
+			t.Fatalf("result[%d]: expected user cancelled, got %q (status %s)", i, r.Message, r.Status)
+		}
+	}
+}
