@@ -41,6 +41,16 @@ func (c *ImmichClient) newRequest(method, path string, body io.Reader) (*http.Re
 	return req, nil
 }
 
+// writeMethod is the HTTP verb for the mutating asset endpoints (/assets and
+// /assets/copy). Immich v3 deprecated PUT in favor of PATCH and removes PUT in
+// v4, but PATCH does not exist on legacy servers, so send PATCH only on v3+.
+func (c *ImmichClient) writeMethod() string {
+	if c.apiV3 {
+		return http.MethodPatch
+	}
+	return http.MethodPut
+}
+
 func (c *ImmichClient) doRequest(req *http.Request) (*http.Response, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
