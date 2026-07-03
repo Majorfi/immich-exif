@@ -51,7 +51,7 @@ func parseConfig() (*model.Config, error) {
 	flag.BoolVar(&cfg.ListAlbums, "list-albums", false, "List your albums (ID and name) and exit")
 	flag.BoolVar(&showVersion, "version", false, "Print the version and exit")
 
-	flag.BoolVar(&cfg.ResolveDuplicate, "resolve-duplicate", false, "Resolve duplicate upload status by copying associations to duplicate asset and deleting old asset")
+	flag.BoolVar(&cfg.ResolveDuplicate, "resolve-duplicate", false, "Resolve duplicate upload status by copying associations to the duplicate asset and trashing the old one")
 	flag.BoolVar(&cfg.IncludeNoAlbum, "include-no-album", true, "With album-mirrored export, include assets with no album under no-album/")
 	flag.BoolVar(&cfg.All, "all", false, "Process all assets")
 	flag.BoolVar(&cfg.Force, "force", false, "Force re-processing all assets (ignore state cache)")
