@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/majorfi/immich-exif/api"
@@ -77,20 +78,11 @@ func resolveExportDir(cfg *model.Config) string {
 func addAlbumAssetMappings(exportAlbumIDsByAsset map[string][]string, assetIDs []string, albumID string) {
 	for _, assetID := range assetIDs {
 		existingAlbumIDs := exportAlbumIDsByAsset[assetID]
-		if containsString(existingAlbumIDs, albumID) {
+		if slices.Contains(existingAlbumIDs, albumID) {
 			continue
 		}
 		exportAlbumIDsByAsset[assetID] = append(existingAlbumIDs, albumID)
 	}
-}
-
-func containsString(values []string, expected string) bool {
-	for _, value := range values {
-		if value == expected {
-			return true
-		}
-	}
-	return false
 }
 
 func addNoAlbumAssetMappings(exportAlbumIDsByAsset map[string][]string, assetIDs []string) {

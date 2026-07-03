@@ -33,7 +33,7 @@ func TestDecodeChecksum(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := decodeChecksum(tc.input)
+			got, err := model.DecodeSHA1Checksum(tc.input)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error for %q", tc.input)
@@ -160,7 +160,10 @@ func TestModernUploaderVerifyUploadProceedsOnMatch(t *testing.T) {
 	}
 }
 
-func TestModernUploaderDeleteForceFollowsVerification(t *testing.T) {
+// The original must always land in the Immich trash: checksum verification
+// proves the transfer, not that exiftool produced a valid file, so the trash
+// window stays as the recovery path for silent rewrite corruption.
+func TestModernUploaderAlwaysDeletesToTrash(t *testing.T) {
 	content := []byte("the-real-uploaded-bytes")
 	sum := sha1.Sum(content)
 
@@ -169,7 +172,7 @@ func TestModernUploaderDeleteForceFollowsVerification(t *testing.T) {
 		verify    bool
 		wantForce bool
 	}{
-		{name: "verified upload deletes permanently", verify: true, wantForce: true},
+		{name: "verified upload moves to trash", verify: true, wantForce: false},
 		{name: "unverified upload moves to trash", verify: false, wantForce: false},
 	}
 

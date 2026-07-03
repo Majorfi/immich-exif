@@ -23,7 +23,7 @@ func verifyUploadedChecksum(client *api.ImmichClient, filePath, targetID string)
 	if err != nil {
 		return fmt.Errorf("fetch uploaded asset: %w", err)
 	}
-	got, err := decodeChecksum(newAsset.Checksum)
+	got, err := model.DecodeSHA1Checksum(newAsset.Checksum)
 	if err != nil {
 		return fmt.Errorf("decode server checksum %q: %w", newAsset.Checksum, err)
 	}
@@ -45,8 +45,4 @@ func fileChecksumSHA1(path string) ([]byte, error) {
 		return nil, err
 	}
 	return h.Sum(nil), nil
-}
-
-func decodeChecksum(checksum string) ([]byte, error) {
-	return model.DecodeSHA1Checksum(checksum)
 }

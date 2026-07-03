@@ -132,8 +132,9 @@ func TestIsV3Version(t *testing.T) {
 		{"4.2.0", true},
 		{"2.9.9", false},
 		{"1.119.0", false},
-		{"", false},
-		{"garbage", false},
+		// v3 is the primary target: unrecognizable versions assume v3.
+		{"", true},
+		{"garbage", true},
 	}
 	for _, tc := range cases {
 		if got := isV3Version(tc.version); got != tc.want {
@@ -201,10 +202,35 @@ func TestResolveAPIModeOverridesIgnoreVersion(t *testing.T) {
 	}
 }
 
-func TestResolveAPIModeFailsOnUnreachableServer(t *testing.T) {
+func TestResolveAPIModeAutoFailsOnUnreachableServer(t *testing.T) {
 	c := NewImmichClient("http://localhost:1", "key")
-	if err := c.ResolveAPIMode("legacy"); err == nil {
+	if err := c.ResolveAPIMode("auto"); err == nil {
 		t.Fatal("expected connectivity error")
+	}
+}
+
+// A forced mode must not require the server.about permission (or the endpoint
+// at all): a least-privilege API key with -immich-api v3/legacy still works.
+func TestResolveAPIModeForcedModesTolerateAboutFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	cV3 := NewImmichClient(server.URL, "key")
+	if err := cV3.ResolveAPIMode("v3"); err != nil {
+		t.Fatalf("forced v3 must not fail on about error: %v", err)
+	}
+	if !cV3.apiV3 {
+		t.Fatal("expected apiV3=true for forced v3")
+	}
+
+	cLegacy := NewImmichClient(server.URL, "key")
+	if err := cLegacy.ResolveAPIMode("legacy"); err != nil {
+		t.Fatalf("forced legacy must not fail on about error: %v", err)
+	}
+	if cLegacy.apiV3 {
+		t.Fatal("expected apiV3=false for forced legacy")
 	}
 }
 

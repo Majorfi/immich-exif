@@ -1373,7 +1373,7 @@ func TestRunDryRunHappyPath(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/original"):
 			w.Write([]byte("imagedata"))
 		default:
-			json.NewEncoder(w).Encode(model.AssetResponse{ID: "a1", OriginalFileName: "p.jpg", ExifInfo: &model.ExifInfo{Description: &desc}})
+			json.NewEncoder(w).Encode(model.AssetResponse{ID: "a1", OriginalFileName: "p.jpg", Checksum: "17823b70fb444e73d1eb356a4af993f6fba77489", ExifInfo: &model.ExifInfo{Description: &desc}})
 		}
 	}))
 	defer server.Close()

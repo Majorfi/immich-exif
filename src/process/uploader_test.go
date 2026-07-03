@@ -2,10 +2,12 @@ package process
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -476,6 +478,9 @@ func TestModernUploaderResolvesDuplicateWhenEnabled(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":"dup-id","status":"duplicate"}`))
+		case "GET /api/assets/dup-id":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"dup-id","isTrashed":false}`))
 		case "PUT /api/assets/copy":
 			w.WriteHeader(http.StatusNoContent)
 		case "DELETE /api/assets":
@@ -510,8 +515,58 @@ func TestModernUploaderResolvesDuplicateWhenEnabled(t *testing.T) {
 	if outcome.NewID != "dup-id" {
 		t.Fatalf("expected resolved ID dup-id, got %s", outcome.NewID)
 	}
-	if len(calls) != 3 {
-		t.Fatalf("expected upload, copy, delete calls, got %d: %v", len(calls), calls)
+	if len(calls) != 4 {
+		t.Fatalf("expected upload, trash-check, copy, delete calls, got %d: %v", len(calls), calls)
+	}
+}
+
+func TestModernUploaderRefusesTrashedDuplicate(t *testing.T) {
+	deleteCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/assets":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"dup-id","status":"duplicate"}`))
+		case "GET /api/assets/dup-id":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"dup-id","isTrashed":true}`))
+		case "DELETE /api/assets":
+			deleteCalled = true
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "asset.jpg")
+	if err := os.WriteFile(filePath, []byte("data"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	client := api.NewImmichClient(server.URL, "test-key")
+	uploader := &ModernUploader{Client: client, ResolveDuplicate: true}
+	asset := &model.AssetResponse{
+		ID:             "old-id",
+		FileCreatedAt:  time.Now(),
+		FileModifiedAt: time.Now(),
+	}
+
+	_, err := uploader.Upload(filePath, asset, &noopEmitter{})
+	if err == nil {
+		t.Fatal("expected error when the duplicate target is trashed")
+	}
+	if !strings.Contains(err.Error(), "trash") {
+		t.Fatalf("expected trash-related error, got: %v", err)
+	}
+	var nonRetry *nonRetryableError
+	if !errors.As(err, &nonRetry) {
+		t.Fatalf("expected nonRetryable error, got: %v", err)
+	}
+	if deleteCalled {
+		t.Fatal("the original must NOT be deleted when the duplicate is trashed")
 	}
 }
 

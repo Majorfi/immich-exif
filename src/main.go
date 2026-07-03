@@ -7,6 +7,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	// Embed the IANA time zone database so exifInfo.timeZone names resolve even
+	// on hosts without a system zoneinfo (minimal containers, Windows).
+	_ "time/tzdata"
 
 	"github.com/majorfi/immich-exif/api"
 	"github.com/majorfi/immich-exif/exif"
@@ -17,6 +20,10 @@ import (
 )
 
 var snapshotAssetFn = state.SnapshotAsset
+
+// stopSignalHandlingFn restores default signal handling after the first
+// interrupt, so a second Ctrl-C aborts immediately instead of being swallowed.
+var stopSignalHandlingFn = func() {}
 
 var version = "dev"
 
@@ -61,6 +68,7 @@ func run() int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	stopSignalHandlingFn = stop
 
 	client := api.NewImmichClient(cfg.URL, cfg.APIKey)
 
@@ -98,10 +106,7 @@ func run() int {
 				if !ok {
 					return false
 				}
-				if stateDB.IsUpToDate(asset.ID, snap) {
-					return true
-				}
-				return false
+				return stateDB.IsUpToDate(asset.ID, snap)
 			}
 		}
 	}
@@ -117,6 +122,9 @@ func run() int {
 	}
 	if stats.UnsupportedVideoSkipped > 0 {
 		fmt.Printf("Pre-filtered %d unsupported video assets\n", stats.UnsupportedVideoSkipped)
+	}
+	if stats.LivePhotoMotionSkipped > 0 {
+		fmt.Printf("Pre-filtered %d hidden videos (likely live-photo motion parts)\n", stats.LivePhotoMotionSkipped)
 	}
 	if stats.StateSkipped > 0 {
 		fmt.Printf("Skipped %d assets with unchanged metadata\n", stats.StateSkipped)
@@ -176,7 +184,7 @@ func listAlbums(client *api.ImmichClient) int {
 		return 0
 	}
 	for _, album := range albums {
-		fmt.Printf("%s  %s (%d)\n", album.ID, album.AlbumName, album.AssetCount)
+		fmt.Printf("%s  %s (%d)\n", album.ID, model.SanitizeForTerminal(album.AlbumName), album.AssetCount)
 	}
 	return 0
 }
@@ -201,13 +209,18 @@ func runPipeline(ctx context.Context, client *api.ImmichClient, uploader process
 
 	pool := process.NewWorkerPool(client, uploader, cfg, emitter)
 
+	if ctx.Err() != nil {
+		pool.Cancel()
+	}
+
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
 		select {
 		case <-ctx.Done():
-			fmt.Fprintln(os.Stderr, "\nInterrupt received, finishing in-flight work and stopping...")
+			fmt.Fprintln(os.Stderr, "\nInterrupt received, finishing in-flight work and stopping... (Ctrl-C again to abort immediately)")
 			pool.Cancel()
+			stopSignalHandlingFn()
 		case <-done:
 		}
 	}()
@@ -236,6 +249,7 @@ func resolveAssetIDs(client *api.ImmichClient, cfg *model.Config, shouldSkip fun
 		allIDs = append(allIDs, ids...)
 		stats.NoWritableMetadataSkipped += allStats.NoWritableMetadataSkipped
 		stats.UnsupportedVideoSkipped += allStats.UnsupportedVideoSkipped
+		stats.LivePhotoMotionSkipped += allStats.LivePhotoMotionSkipped
 		stats.StateSkipped += allStats.StateSkipped
 	}
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -15,6 +16,7 @@ import (
 type AssetSelectionStats struct {
 	NoWritableMetadataSkipped int
 	UnsupportedVideoSkipped   int
+	LivePhotoMotionSkipped    int
 	StateSkipped              int
 }
 
@@ -84,6 +86,10 @@ func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool
 				continue
 			}
 			seen[asset.ID] = true
+			if model.IsLivePhotoMotionCandidate(asset) {
+				stats.LivePhotoMotionSkipped++
+				continue
+			}
 			if model.IsUnsupportedVideoAsset(asset) {
 				stats.UnsupportedVideoSkipped++
 				continue
@@ -102,7 +108,7 @@ func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool
 
 	// search/metadata filters by a single visibility, so enumerate them to cover
 	// archived and hidden assets, not just the timeline default.
-	for _, visibility := range searchVisibilities {
+	for _, visibility := range c.searchVisibilityValues() {
 		if err := c.forEachSearchPage(nil, true, visibility, handle); err != nil {
 			return nil, AssetSelectionStats{}, err
 		}
@@ -165,7 +171,7 @@ func (c *ImmichClient) GetAlbumAssets(albumID string) ([]string, error) {
 		return c.searchAlbumAssetIDs(albumID)
 	}
 
-	req, err := c.newRequest(http.MethodGet, "/albums/"+albumID, nil)
+	req, err := c.newRequest(http.MethodGet, "/albums/"+url.PathEscape(albumID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -194,11 +200,22 @@ func (c *ImmichClient) GetAlbumAssets(albumID string) ([]string, error) {
 // "locked" is excluded: it requires an elevated session.
 var searchVisibilities = []string{"timeline", "archive", "hidden"}
 
+// searchVisibilityValues returns the visibility filters to enumerate. Servers
+// predating the filter (1.x < 1.133) silently strip the field, which would
+// scan the same default set three times, so query them with a single
+// unfiltered pass instead.
+func (c *ImmichClient) searchVisibilityValues() []string {
+	if c.searchVisibilityUnsupported {
+		return []string{""}
+	}
+	return searchVisibilities
+}
+
 func (c *ImmichClient) searchAlbumAssetIDs(albumID string) ([]string, error) {
 	var ids []string
 	seen := map[string]bool{}
 
-	for _, visibility := range searchVisibilities {
+	for _, visibility := range c.searchVisibilityValues() {
 		err := c.forEachSearchPage([]string{albumID}, false, visibility, func(items []model.AssetResponse) {
 			for _, asset := range items {
 				if seen[asset.ID] {

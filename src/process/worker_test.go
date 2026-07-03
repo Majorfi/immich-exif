@@ -63,13 +63,14 @@ func TestWorkerPoolProcessCollectsResults(t *testing.T) {
 	emitter := &noopEmitter{}
 	pool := NewWorkerPool(client, nil, cfg, emitter)
 
-	results := pool.Process([]string{"id-1", "id-2"})
+	inputIDs := []string{"id-1", "id-2"}
+	results := pool.Process(inputIDs)
 	if len(results) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
 	for i, r := range results {
-		if r.AssetID != results[i].AssetID {
-			t.Fatalf("result[%d]: unexpected asset ID %s", i, r.AssetID)
+		if r.AssetID != inputIDs[i] {
+			t.Fatalf("result[%d]: expected asset ID %s, got %s", i, inputIDs[i], r.AssetID)
 		}
 	}
 }
@@ -112,6 +113,7 @@ func TestWorkerPoolProcessCancellation(t *testing.T) {
 		asset := model.AssetResponse{
 			ID:               "asset",
 			OriginalFileName: "photo.jpg",
+			Checksum:         sha1HexOf("fake-data"),
 			ExifInfo:         &model.ExifInfo{Description: &desc},
 		}
 		w.Header().Set("Content-Type", "application/json")

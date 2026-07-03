@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -14,11 +16,20 @@ import (
 
 const apiV3MajorVersion = 3
 
+// searchVisibilityMinorVersion is the 1.x minor that introduced the
+// `visibility` filter on search/metadata (the asset-visibility refactor).
+const searchVisibilityMinorVersion = 133
+
+const maxErrorBodyBytes = 8 * 1024
+
 type ImmichClient struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
 	apiV3      bool
+	// searchVisibilityUnsupported is set when the server predates the
+	// `visibility` search filter; those servers silently strip the field.
+	searchVisibilityUnsupported bool
 }
 
 func NewImmichClient(baseURL, apiKey string) *ImmichClient {
@@ -26,8 +37,41 @@ func NewImmichClient(baseURL, apiKey string) *ImmichClient {
 		baseURL: baseURL,
 		apiKey:  apiKey,
 		httpClient: &http.Client{
-			Timeout: 5 * time.Minute,
+			// No blanket Timeout: it would cover body transfer and make any
+			// asset slower than the limit permanently unprocessable. Bound the
+			// connection and header phases instead; streams may take as long
+			// as they keep moving.
+			Transport: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+				DialContext: (&net.Dialer{
+					Timeout:   30 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ResponseHeaderTimeout: 2 * time.Minute,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
+			CheckRedirect: newRedirectPolicy(baseURL),
 		},
+	}
+}
+
+// newRedirectPolicy refuses redirects that would leak the x-api-key header:
+// Go only strips Authorization/Cookie on cross-origin redirects, so a custom
+// header would silently follow to another host or downgrade to plaintext.
+func newRedirectPolicy(baseURL string) func(req *http.Request, via []*http.Request) error {
+	base, parseErr := url.Parse(baseURL)
+	return func(req *http.Request, via []*http.Request) error {
+		if parseErr != nil {
+			return fmt.Errorf("refusing redirect: cannot parse base URL %q: %w", baseURL, parseErr)
+		}
+		if !strings.EqualFold(req.URL.Host, base.Host) {
+			return fmt.Errorf("refusing redirect to %s: it leaves %s and would forward the API key", req.URL.Host, base.Host)
+		}
+		if strings.EqualFold(base.Scheme, "https") && !strings.EqualFold(req.URL.Scheme, "https") {
+			return fmt.Errorf("refusing redirect from https to %s: the API key would be sent in plaintext", req.URL.Scheme)
+		}
+		return nil
 	}
 }
 
@@ -58,8 +102,8 @@ func (c *ImmichClient) doRequest(req *http.Request) (*http.Response, error) {
 	}
 	if resp.StatusCode >= 400 {
 		defer resp.Body.Close()
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("%s %s returned %d: %s", req.Method, req.URL.Path, resp.StatusCode, string(bodyBytes))
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		return nil, fmt.Errorf("%s %s returned %d: %s", req.Method, req.URL.Path, resp.StatusCode, model.SanitizeForTerminal(string(bodyBytes)))
 	}
 	return resp, nil
 }
@@ -77,36 +121,72 @@ func (c *ImmichClient) About() (*model.ServerAbout, error) {
 	return &about, nil
 }
 
-// ResolveAPIMode verifies connectivity and selects the API contract to use.
-// mode is "auto" (detect from server version), "legacy", or "v3".
+// ResolveAPIMode selects the API contract to use. mode is "auto" (detect from
+// the server version, assuming v3 when the version is unrecognizable),
+// "legacy", or "v3". Forced modes must not require the server.about API-key
+// permission, so their version probe is best-effort only.
 func (c *ImmichClient) ResolveAPIMode(mode string) error {
-	about, err := c.About()
-	if err != nil {
-		return err
-	}
 	switch mode {
-	case "legacy":
-		c.apiV3 = false
-	case "v3":
-		c.apiV3 = true
+	case "legacy", "v3":
+		c.apiV3 = mode == "v3"
+		if about, err := c.About(); err == nil {
+			c.applyServerVersion(about.Version)
+		}
+		return nil
 	default:
+		about, err := c.About()
+		if err != nil {
+			return err
+		}
 		c.apiV3 = isV3Version(about.Version)
+		c.applyServerVersion(about.Version)
+		return nil
 	}
-	return nil
 }
 
+func (c *ImmichClient) applyServerVersion(version string) {
+	major, minor, ok := parseVersionMajorMinor(version)
+	if !ok {
+		return
+	}
+	c.searchVisibilityUnsupported = major < 1 || (major == 1 && minor < searchVisibilityMinorVersion)
+}
+
+// isV3Version reports whether the server speaks the v3 API contract. v3 is the
+// primary supported target, so unrecognizable versions default to v3; point a
+// truly old server at the tool with -immich-api legacy.
 func isV3Version(version string) bool {
+	major, _, ok := parseVersionMajorMinor(version)
+	if !ok {
+		return true
+	}
+	return major >= apiV3MajorVersion
+}
+
+func parseVersionMajorMinor(version string) (int, int, bool) {
 	v := strings.TrimSpace(version)
 	v = strings.TrimPrefix(v, "v")
 	v = strings.TrimPrefix(v, "V")
-	if dot := strings.IndexByte(v, '.'); dot >= 0 {
-		v = v[:dot]
-	}
-	major, err := strconv.Atoi(v)
+
+	parts := strings.SplitN(v, ".", 3)
+	major, err := strconv.Atoi(stripPreRelease(parts[0]))
 	if err != nil {
-		return false
+		return 0, 0, false
 	}
-	return major >= apiV3MajorVersion
+	minor := 0
+	if len(parts) > 1 {
+		if m, err := strconv.Atoi(stripPreRelease(parts[1])); err == nil {
+			minor = m
+		}
+	}
+	return major, minor, true
+}
+
+func stripPreRelease(part string) string {
+	if idx := strings.IndexAny(part, "-+"); idx >= 0 {
+		return part[:idx]
+	}
+	return part
 }
 
 func (c *ImmichClient) doJSON(req *http.Request, dest any) error {

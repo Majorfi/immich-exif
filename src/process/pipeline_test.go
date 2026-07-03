@@ -1,6 +1,8 @@
 package process
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -103,7 +105,7 @@ func TestProcessAssetFailsOnGetAssetError(t *testing.T) {
 	cfg := &model.Config{}
 	emitter := &noopEmitter{}
 
-	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, emitter)
+	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, emitter, nil)
 	if result.Status != model.StatusFailed {
 		t.Fatalf("expected failed, got %s", result.Status)
 	}
@@ -128,7 +130,7 @@ func TestProcessAssetSkipsWhenNoMetadataToEmbed(t *testing.T) {
 	cfg := &model.Config{}
 	emitter := &noopEmitter{}
 
-	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, emitter)
+	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, emitter, nil)
 	if result.Status != model.StatusSkipped {
 		t.Fatalf("expected skipped, got %s", result.Status)
 	}
@@ -148,6 +150,7 @@ func TestProcessAssetProcessesVideoAssetInDryRun(t *testing.T) {
 			ID:               "asset-video-1",
 			OriginalFileName: "clip.mp4",
 			OriginalMimeType: "video/mp4",
+			Checksum:         sha1HexOf("fake-video-data"),
 			ExifInfo:         &model.ExifInfo{Description: &desc},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -164,7 +167,7 @@ func TestProcessAssetProcessesVideoAssetInDryRun(t *testing.T) {
 	cfg := &model.Config{DryRun: true}
 	emitter := &noopEmitter{}
 
-	result := ProcessAsset(client, nil, cfg, "asset-video-1", 1, 1, emitter)
+	result := ProcessAsset(client, nil, cfg, "asset-video-1", 1, 1, emitter, nil)
 	if result.Status != model.StatusSuccess {
 		t.Fatalf("expected success, got %s", result.Status)
 	}
@@ -188,7 +191,7 @@ func TestProcessAssetSkipsUnsupportedVideoAsset(t *testing.T) {
 	defer server.Close()
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, nil, &model.Config{}, "asset-video-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, nil, &model.Config{}, "asset-video-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusSkipped {
 		t.Fatalf("expected skipped, got %s", result.Status)
 	}
@@ -224,6 +227,11 @@ func withMockExiftool(readFn func(string) (exif.ExifTagMap, error), writeFn func
 	}
 }
 
+func sha1HexOf(data string) string {
+	sum := sha1.Sum([]byte(data))
+	return hex.EncodeToString(sum[:])
+}
+
 func assetServerWithExif() *httptest.Server {
 	desc := "Test Description"
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -234,6 +242,7 @@ func assetServerWithExif() *httptest.Server {
 		asset := model.AssetResponse{
 			ID:               "asset-1",
 			OriginalFileName: "photo.jpg",
+			Checksum:         sha1HexOf("fake-image-data"),
 			ExifInfo:         &model.ExifInfo{Description: &desc},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -251,6 +260,7 @@ func TestProcessAssetDownloadFails(t *testing.T) {
 		asset := model.AssetResponse{
 			ID:               "asset-1",
 			OriginalFileName: "photo.jpg",
+			Checksum:         sha1HexOf("fake-image-data"),
 			ExifInfo:         &model.ExifInfo{Description: &desc},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -259,7 +269,7 @@ func TestProcessAssetDownloadFails(t *testing.T) {
 	defer server.Close()
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusFailed {
 		t.Fatalf("expected failed, got %s", result.Status)
 	}
@@ -278,7 +288,7 @@ func TestProcessAssetReadExifFails(t *testing.T) {
 	)()
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusFailed {
 		t.Fatalf("expected failed, got %s", result.Status)
 	}
@@ -304,7 +314,7 @@ func TestProcessAssetSkipsWhenMetadataAlreadyMatches(t *testing.T) {
 	)()
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusSkipped {
 		t.Fatalf("expected skipped, got %s", result.Status)
 	}
@@ -323,7 +333,7 @@ func TestProcessAssetUserSkips(t *testing.T) {
 	)()
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &skipEmitter{})
+	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &skipEmitter{}, nil)
 	if result.Status != model.StatusSkipped {
 		t.Fatalf("expected skipped, got %s", result.Status)
 	}
@@ -342,7 +352,7 @@ func TestProcessAssetUserQuits(t *testing.T) {
 	)()
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &quitEmitter{})
+	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &quitEmitter{}, nil)
 	if result.Status != model.StatusFailed {
 		t.Fatalf("expected failed, got %s", result.Status)
 	}
@@ -361,7 +371,7 @@ func TestProcessAssetWriteExifFails(t *testing.T) {
 	)()
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusFailed {
 		t.Fatalf("expected failed, got %s", result.Status)
 	}
@@ -381,7 +391,7 @@ func TestProcessAssetDryRun(t *testing.T) {
 
 	client := api.NewImmichClient(server.URL, "key")
 	cfg := &model.Config{DryRun: true}
-	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusSuccess {
 		t.Fatalf("expected success, got %s", result.Status)
 	}
@@ -402,7 +412,7 @@ func TestProcessAssetExportMode(t *testing.T) {
 
 	client := api.NewImmichClient(server.URL, "key")
 	cfg := &model.Config{ExportDir: exportDir}
-	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusSuccess {
 		t.Fatalf("expected success, got %s", result.Status)
 	}
@@ -435,7 +445,7 @@ func TestProcessAssetUploadSuccess(t *testing.T) {
 
 	client := api.NewImmichClient(server.URL, "key")
 	uploader := &mockUploader{outcome: UploadOutcome{NewID: "new-id", Cacheable: true}}
-	result := ProcessAsset(client, uploader, &model.Config{}, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, uploader, &model.Config{}, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusSuccess {
 		t.Fatalf("expected success, got %s", result.Status)
 	}
@@ -458,7 +468,7 @@ func TestProcessAssetUploadReplacedInPlace(t *testing.T) {
 
 	client := api.NewImmichClient(server.URL, "key")
 	uploader := &mockUploader{outcome: UploadOutcome{NewID: "asset-1", Cacheable: true}}
-	result := ProcessAsset(client, uploader, &model.Config{}, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, uploader, &model.Config{}, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusSuccess {
 		t.Fatalf("expected success, got %s", result.Status)
 	}
@@ -489,7 +499,7 @@ func TestProcessAssetErrorMessageContainsAssetID(t *testing.T) {
 	defer server.Close()
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, nil, &model.Config{}, "abcdef12-3456-7890-abcd-ef1234567890", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, nil, &model.Config{}, "abcdef12-3456-7890-abcd-ef1234567890", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusFailed {
 		t.Fatalf("expected failed, got %s", result.Status)
 	}
@@ -519,7 +529,7 @@ func TestProcessAssetRetriesUploadOnTransientFailure(t *testing.T) {
 	}
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, uploader, &model.Config{}, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, uploader, &model.Config{}, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusSuccess {
 		t.Fatalf("expected success after retry, got %s: %s", result.Status, result.Message)
 	}
@@ -546,7 +556,7 @@ func TestProcessAssetRetriesExhausted(t *testing.T) {
 	}
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, uploader, &model.Config{}, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, uploader, &model.Config{}, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusFailed {
 		t.Fatalf("expected failed after retries exhausted, got %s", result.Status)
 	}
@@ -577,7 +587,7 @@ func TestProcessAssetUploadNonCacheableIsSkipped(t *testing.T) {
 		},
 	}
 
-	result := ProcessAsset(client, uploader, &model.Config{}, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, uploader, &model.Config{}, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusSkipped {
 		t.Fatalf("expected skipped, got %s", result.Status)
 	}
@@ -603,7 +613,7 @@ func TestProcessAssetUploadFails(t *testing.T) {
 
 	client := api.NewImmichClient(server.URL, "key")
 	uploader := &mockUploader{returnErr: fmt.Errorf("upload boom")}
-	result := ProcessAsset(client, uploader, &model.Config{}, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, uploader, &model.Config{}, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusFailed {
 		t.Fatalf("expected failed, got %s", result.Status)
 	}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -16,7 +17,7 @@ import (
 )
 
 func (c *ImmichClient) GetAsset(assetID string) (*model.AssetResponse, error) {
-	req, err := c.newRequest(http.MethodGet, "/assets/"+assetID, nil)
+	req, err := c.newRequest(http.MethodGet, "/assets/"+url.PathEscape(assetID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +30,7 @@ func (c *ImmichClient) GetAsset(assetID string) (*model.AssetResponse, error) {
 }
 
 func (c *ImmichClient) DownloadAsset(assetID, destPath, expectedChecksum string) (err error) {
-	req, err := c.newRequest(http.MethodGet, "/assets/"+assetID+"/original", nil)
+	req, err := c.newRequest(http.MethodGet, "/assets/"+url.PathEscape(assetID)+"/original", nil)
 	if err != nil {
 		return err
 	}
@@ -139,6 +140,14 @@ func (c *ImmichClient) UploadAsset(filePath string, asset *model.AssetResponse) 
 		if err := w.WriteField("isFavorite", fmt.Sprintf("%t", asset.IsFavorite)); err != nil {
 			writeErr = err
 			return
+		}
+		// Preserve the live-photo pairing: without this the replacement still
+		// would permanently lose its link to the motion video.
+		if asset.LivePhotoVideoID != "" {
+			if err := w.WriteField("livePhotoVideoId", asset.LivePhotoVideoID); err != nil {
+				writeErr = err
+				return
+			}
 		}
 
 		if err := w.Close(); err != nil {

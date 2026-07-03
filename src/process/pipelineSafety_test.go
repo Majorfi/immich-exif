@@ -62,6 +62,7 @@ func TestProcessAssetRejectsPathTraversalFilename(t *testing.T) {
 		asset := model.AssetResponse{
 			ID:               "asset-1",
 			OriginalFileName: "../../../../escape.jpg",
+			Checksum:         sha1HexOf("fake-image-data"),
 			ExifInfo:         &model.ExifInfo{Description: &desc},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -75,7 +76,7 @@ func TestProcessAssetRejectsPathTraversalFilename(t *testing.T) {
 	)()
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusFailed {
 		t.Fatalf("expected failed for traversal filename, got %s: %s", result.Status, result.Message)
 	}
@@ -105,7 +106,7 @@ func TestProcessAssetRejectsTraversalAlbumID(t *testing.T) {
 	}
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusFailed {
 		t.Fatalf("expected failed for traversal album ID, got %s: %s", result.Status, result.Message)
 	}
@@ -133,7 +134,7 @@ func TestProcessAssetDryRunDoesNotWriteAlbumExport(t *testing.T) {
 	}
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusSuccess {
 		t.Fatalf("expected success, got %s: %s", result.Status, result.Message)
 	}
@@ -162,7 +163,7 @@ func TestProcessAssetDryRunDoesNotWriteToExportDir(t *testing.T) {
 	exportDir := t.TempDir()
 	client := api.NewImmichClient(server.URL, "key")
 	cfg := &model.Config{DryRun: true, ExportDir: exportDir}
-	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusSuccess {
 		t.Fatalf("expected success, got %s: %s", result.Status, result.Message)
 	}

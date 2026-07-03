@@ -47,7 +47,7 @@ func (wp *WorkerPool) Process(assetIDs []string) []model.ProcessResult {
 					emitResult(idx, model.ProcessResult{AssetID: assetIDs[idx], Status: model.StatusSkipped, Message: "user cancelled"})
 					continue
 				}
-				result := ProcessAsset(wp.client, wp.uploader, wp.cfg, assetIDs[idx], idx+1, total, wp.emitter)
+				result := ProcessAsset(wp.client, wp.uploader, wp.cfg, assetIDs[idx], idx+1, total, wp.emitter, wp.cancelled.Load)
 				emitResult(idx, result)
 				if result.Cancelled {
 					wp.cancelled.Store(true)
