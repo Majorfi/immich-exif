@@ -55,7 +55,7 @@ const SAFETY = [
       "Checksum verification is on by default: the uploaded asset is re-fetched and its checksum compared to what you sent before anything is removed. Downloads are checked the same way, so a corrupt or truncated transfer never reaches the upload step.",
   },
   {
-    title: "Permanent only when verified",
+    title: "Trash, never permanent delete",
     description:
       "The re-upload is checksum-verified before the original is touched, and the original always goes to Immich's trash — never a permanent delete — so it stays recoverable either way.",
   },

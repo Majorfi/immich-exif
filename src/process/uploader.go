@@ -57,6 +57,12 @@ func (u *ModernUploader) Upload(filePath string, asset *model.AssetResponse, emi
 			if duplicate.IsTrashed {
 				return UploadOutcome{}, nonRetryable(fmt.Errorf("duplicate asset %s is in the trash; restore it in Immich before resolving (old asset %s NOT deleted)", model.ShortID(newID), model.ShortID(asset.ID)))
 			}
+			// Resolving onto a duplicate that lacks the live-photo link would
+			// trash the only asset referencing the motion video, severing the
+			// pair for good once the trash purges.
+			if asset.LivePhotoVideoID != "" && duplicate.LivePhotoVideoID == "" {
+				return UploadOutcome{}, nonRetryable(fmt.Errorf("duplicate asset %s lacks the live-photo link of %s; resolving would sever the pair (old asset NOT deleted)", model.ShortID(newID), model.ShortID(asset.ID)))
+			}
 			emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Duplicate detected. Resolving by moving associations to %s and deleting old asset...", newID)})
 			if err := u.finalizeReplacement(filePath, asset, newID, emitter); err != nil {
 				return UploadOutcome{}, nonRetryable(err)

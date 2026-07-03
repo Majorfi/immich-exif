@@ -61,7 +61,9 @@ func TestSanitizeForTerminal(t *testing.T) {
 		{name: "ansi escape stripped", input: "\x1b[2Jspoofed", want: "[2Jspoofed"},
 		{name: "carriage return stripped", input: "line\rredraw", want: "lineredraw"},
 		{name: "bell and del stripped", input: "a\x07b\x7fc", want: "abc"},
-		{name: "newline and tab kept", input: "a\n\tb", want: "a\n\tb"},
+		{name: "c1 csi and osc stripped", input: "a\u009b2J\u009dbc", want: "a2Jbc"},
+		{name: "newline and tab flattened", input: "a\n\tb", want: "a  b"},
+		{name: "accents preserved", input: "photo-été.jpg", want: "photo-été.jpg"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

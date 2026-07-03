@@ -77,6 +77,10 @@ func run() int {
 		return 1
 	}
 
+	if !cfg.DryRun && cfg.ExportDir == "" {
+		warnIfServerTrashDisabled(client)
+	}
+
 	var stateDB *state.StateDB
 	snapshots := map[string]string{}
 	var shouldSkip func(model.AssetResponse) bool
@@ -171,6 +175,20 @@ func run() int {
 		}
 	}
 	return 0
+}
+
+// warnIfServerTrashDisabled surfaces that the replace path's recovery window
+// does not exist: with the trash feature off, Immich purges soft-deleted
+// assets immediately, so a trashed original cannot be restored. Best-effort —
+// a least-privilege key may not be allowed to read the features endpoint.
+func warnIfServerTrashDisabled(client *api.ImmichClient) {
+	features, err := client.Features()
+	if err != nil {
+		return
+	}
+	if !features.Trash {
+		fmt.Fprintln(os.Stderr, "Warning: this server has the trash feature DISABLED; replaced originals are deleted immediately with no recovery window")
+	}
 }
 
 func listAlbums(client *api.ImmichClient) int {

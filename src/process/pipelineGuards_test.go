@@ -162,3 +162,30 @@ func TestProcessAssetSkipsWhenAssetChangedServerSide(t *testing.T) {
 		t.Fatalf("expected staleness message, got: %s", result.Message)
 	}
 }
+
+// The asymmetric twin of the trashed-duplicate guard: a trashed original must
+// not be silently resurrected as a fresh live asset by a stale re-run.
+func TestProcessAssetSkipsTrashedOriginal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		desc := "Test"
+		asset := model.AssetResponse{
+			ID:               "asset-1",
+			OriginalFileName: "photo.jpg",
+			IsTrashed:        true,
+			Checksum:         sha1HexOf("irrelevant"),
+			ExifInfo:         &model.ExifInfo{Description: &desc},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(asset)
+	}))
+	defer server.Close()
+
+	client := api.NewImmichClient(server.URL, "key")
+	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &noopEmitter{}, nil)
+	if result.Status != model.StatusSkipped {
+		t.Fatalf("expected skipped, got %s: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "trash") {
+		t.Fatalf("expected trash skip message, got: %s", result.Message)
+	}
+}

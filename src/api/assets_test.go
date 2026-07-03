@@ -634,3 +634,59 @@ func TestGetAssetEscapesIDInPath(t *testing.T) {
 		t.Fatalf("expected the ID to be path-escaped, server saw: %s", escapedPath)
 	}
 }
+
+func TestDownloadAssetFailsOnStalledBody(t *testing.T) {
+	origStall := stallTimeout
+	stallTimeout = 100 * time.Millisecond
+	defer func() { stallTimeout = origStall }()
+
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("partial-bytes"))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		<-release
+	}))
+	defer server.Close()
+	// LIFO: release the blocked handler BEFORE server.Close() waits on it.
+	defer close(release)
+
+	c := NewImmichClient(server.URL, "test-key")
+	destPath := filepath.Join(t.TempDir(), "stalled.jpg")
+	start := time.Now()
+	err := c.DownloadAsset("asset-1", destPath, "")
+	if err == nil {
+		t.Fatal("expected error for a stalled download")
+	}
+	if !strings.Contains(err.Error(), "stalled") {
+		t.Fatalf("expected stall error, got: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("stall detection took too long: %v", elapsed)
+	}
+	if _, statErr := os.Stat(destPath); !os.IsNotExist(statErr) {
+		t.Fatal("stalled download must not leave a partial file behind")
+	}
+}
+
+func TestFeaturesReportsTrash(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/server/features" {
+			http.Error(w, "unexpected path", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"trash":false,"smartSearch":true}`))
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "test-key")
+	features, err := c.Features()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if features.Trash {
+		t.Fatal("expected trash=false")
+	}
+}

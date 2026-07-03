@@ -25,6 +25,9 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	if err != nil {
 		return fail("fetch asset: %v", err)
 	}
+	if asset.IsTrashed {
+		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset is in the Immich trash; restore it before processing"}
+	}
 	if model.IsLivePhotoMotionCandidate(*asset) {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "hidden video (likely a live-photo motion part); replacing it would sever the pair"}
 	}

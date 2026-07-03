@@ -47,8 +47,10 @@ func NewImmichClient(baseURL, apiKey string) *ImmichClient {
 					Timeout:   30 * time.Second,
 					KeepAlive: 30 * time.Second,
 				}).DialContext,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ResponseHeaderTimeout: 2 * time.Minute,
+				TLSHandshakeTimeout: 10 * time.Second,
+				// Also covers the server-side processing gap after a large
+				// upload's body is fully sent (checksumming etc.).
+				ResponseHeaderTimeout: 5 * time.Minute,
 				ExpectContinueTimeout: 1 * time.Second,
 			},
 			CheckRedirect: newRedirectPolicy(baseURL),
@@ -76,8 +78,8 @@ func newRedirectPolicy(baseURL string) func(req *http.Request, via []*http.Reque
 }
 
 func (c *ImmichClient) newRequest(method, path string, body io.Reader) (*http.Request, error) {
-	url := c.baseURL + "/api" + path
-	req, err := http.NewRequest(method, url, body)
+	requestURL := c.baseURL + "/api" + path
+	req, err := http.NewRequest(method, requestURL, body)
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +121,19 @@ func (c *ImmichClient) About() (*model.ServerAbout, error) {
 		return nil, err
 	}
 	return &about, nil
+}
+
+func (c *ImmichClient) Features() (*model.ServerFeatures, error) {
+	req, err := c.newRequest(http.MethodGet, "/server/features", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	var features model.ServerFeatures
+	if err := c.doJSON(req, &features); err != nil {
+		return nil, err
+	}
+	return &features, nil
 }
 
 // ResolveAPIMode selects the API contract to use. mode is "auto" (detect from

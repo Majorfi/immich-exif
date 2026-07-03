@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha1"
 	"encoding/json"
 	"fmt"
@@ -34,7 +35,11 @@ func (c *ImmichClient) DownloadAsset(assetID, destPath, expectedChecksum string)
 	if err != nil {
 		return err
 	}
-	resp, err := c.doRequest(req)
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+	watchdog := newProgressWatchdog(cancel)
+	defer watchdog.Stop()
+	resp, err := c.doRequest(req.WithContext(ctx))
 	if err != nil {
 		return err
 	}
@@ -55,8 +60,11 @@ func (c *ImmichClient) DownloadAsset(assetID, destPath, expectedChecksum string)
 	}()
 
 	hasher := sha1.New()
-	written, err := io.Copy(io.MultiWriter(f, hasher), resp.Body)
+	written, err := io.Copy(io.MultiWriter(f, hasher), watchdogReader{reader: resp.Body, watchdog: watchdog})
 	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("download stalled: no progress for %v", stallTimeout)
+		}
 		return fmt.Errorf("write file: %w", err)
 	}
 
@@ -95,9 +103,18 @@ func (c *ImmichClient) UploadAsset(filePath string, asset *model.AssetResponse) 
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Accept", "application/json")
 
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+	watchdog := newProgressWatchdog(cancel)
+	req = req.WithContext(ctx)
+
 	go func() {
 		var writeErr error
 		defer func() {
+			// Once the body is fully written the server may legitimately take a
+			// while to answer (checksumming a large upload); that phase is
+			// bounded by ResponseHeaderTimeout, not the stall watchdog.
+			watchdog.Stop()
 			pw.CloseWithError(writeErr)
 		}()
 
@@ -106,7 +123,7 @@ func (c *ImmichClient) UploadAsset(filePath string, asset *model.AssetResponse) 
 			writeErr = err
 			return
 		}
-		if _, err := io.Copy(part, f); err != nil {
+		if _, err := io.Copy(watchdogWriter{writer: part, watchdog: watchdog}, f); err != nil {
 			writeErr = err
 			return
 		}
@@ -158,6 +175,9 @@ func (c *ImmichClient) UploadAsset(filePath string, asset *model.AssetResponse) 
 
 	var resp model.UploadResponse
 	if err := c.doJSON(req, &resp); err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("upload stalled: no progress for %v", stallTimeout)
+		}
 		return nil, err
 	}
 	return &resp, nil

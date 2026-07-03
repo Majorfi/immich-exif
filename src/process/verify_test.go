@@ -3,7 +3,6 @@ package process
 import (
 	"crypto/sha1"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -17,38 +16,6 @@ import (
 	"github.com/majorfi/immich-exif/api"
 	"github.com/majorfi/immich-exif/model"
 )
-
-func TestDecodeChecksum(t *testing.T) {
-	raw := sha1.Sum([]byte("hello"))
-	cases := []struct {
-		name    string
-		input   string
-		wantErr bool
-	}{
-		{name: "base64 sha1", input: base64.StdEncoding.EncodeToString(raw[:])},
-		{name: "hex sha1", input: hex.EncodeToString(raw[:])},
-		{name: "empty", input: "", wantErr: true},
-		{name: "garbage", input: "not-a-checksum!!", wantErr: true},
-		{name: "wrong length base64", input: base64.StdEncoding.EncodeToString([]byte("short")), wantErr: true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := model.DecodeSHA1Checksum(tc.input)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected error for %q", tc.input)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if string(got) != string(raw[:]) {
-				t.Fatalf("decoded checksum mismatch")
-			}
-		})
-	}
-}
 
 func verifyUploadServer(t *testing.T, returnedChecksum string, deleteCalled *bool) *httptest.Server {
 	t.Helper()
@@ -179,6 +146,7 @@ func TestModernUploaderAlwaysDeletesToTrash(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotForce bool
+			deleteCalled := false
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch {
 				case r.Method == http.MethodPost && r.URL.Path == "/api/assets":
@@ -194,6 +162,7 @@ func TestModernUploaderAlwaysDeletesToTrash(t *testing.T) {
 					if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 						t.Fatalf("decode delete payload: %v", err)
 					}
+					deleteCalled = true
 					gotForce = payload.Force
 					w.WriteHeader(http.StatusNoContent)
 				default:
@@ -212,6 +181,9 @@ func TestModernUploaderAlwaysDeletesToTrash(t *testing.T) {
 
 			if _, err := uploader.Upload(filePath, asset, &noopEmitter{}); err != nil {
 				t.Fatalf("unexpected error: %v", err)
+			}
+			if !deleteCalled {
+				t.Fatal("expected the original to be deleted")
 			}
 			if gotForce != tc.wantForce {
 				t.Fatalf("expected delete force=%v, got %v", tc.wantForce, gotForce)

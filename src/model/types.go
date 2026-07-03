@@ -47,6 +47,10 @@ type ServerAbout struct {
 	Version string `json:"version"`
 }
 
+type ServerFeatures struct {
+	Trash bool `json:"trash"`
+}
+
 type SearchMetadataResponse struct {
 	Assets SearchAssets `json:"assets"`
 }

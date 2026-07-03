@@ -111,7 +111,7 @@ func parseConfig() (*model.Config, error) {
 	// A planted .env that supplies only IMMICH_URL would silently redirect an
 	// API key taken from the shell environment to another host.
 	if urlFromDotenv && !keyFromDotenv && cfg.APIKey != "" && !flagWasSet("url") {
-		fmt.Fprintf(os.Stderr, "Warning: IMMICH_URL comes from ./.env but your API key does not; make sure this .env is yours (%s)\n", cfg.URL)
+		fmt.Fprintf(os.Stderr, "Warning: IMMICH_URL comes from ./.env but your API key does not; make sure this .env is yours (%s)\n", model.SanitizeForTerminal(cfg.URL))
 	}
 
 	if cfg.ListAlbums {

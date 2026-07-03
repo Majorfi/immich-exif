@@ -171,13 +171,14 @@ func printUnresolvedDuplicateHint(results []model.ProcessResult) {
 
 	fmt.Printf("\nSkipped duplicate uploads (%d):\n", len(unresolved))
 	for _, result := range unresolved {
-		fmt.Printf("  %s -> %s\n", result.AssetID, result.DuplicateID)
+		// Both IDs come from server responses; sanitize before printing.
+		fmt.Printf("  %s -> %s\n", model.SanitizeForTerminal(result.AssetID), model.SanitizeForTerminal(result.DuplicateID))
 	}
 
 	command := buildResolveDuplicateCommand(results)
 	if command != "" {
 		fmt.Println("\nTo patch them automatically, rerun with the same auth flags or environment and:")
-		fmt.Printf("  %s\n", command)
+		fmt.Printf("  %s\n", model.SanitizeForTerminal(command))
 	}
 }
 

@@ -593,3 +593,54 @@ func TestModernUploaderUploadError(t *testing.T) {
 		t.Fatal("expected upload error")
 	}
 }
+
+func TestModernUploaderRefusesDuplicateLackingLivePhotoLink(t *testing.T) {
+	deleteCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/assets":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"dup-id","status":"duplicate"}`))
+		case "GET /api/assets/dup-id":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"dup-id","isTrashed":false}`))
+		case "DELETE /api/assets":
+			deleteCalled = true
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "still.heic")
+	if err := os.WriteFile(filePath, []byte("data"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	client := api.NewImmichClient(server.URL, "test-key")
+	uploader := &ModernUploader{Client: client, ResolveDuplicate: true}
+	asset := &model.AssetResponse{
+		ID:               "old-id",
+		LivePhotoVideoID: "motion-id",
+		FileCreatedAt:    time.Now(),
+		FileModifiedAt:   time.Now(),
+	}
+
+	_, err := uploader.Upload(filePath, asset, &noopEmitter{})
+	if err == nil {
+		t.Fatal("expected error when the duplicate lacks the live-photo link")
+	}
+	if !strings.Contains(err.Error(), "live-photo") {
+		t.Fatalf("expected live-photo error, got: %v", err)
+	}
+	var nonRetry *nonRetryableError
+	if !errors.As(err, &nonRetry) {
+		t.Fatalf("expected nonRetryable error, got: %v", err)
+	}
+	if deleteCalled {
+		t.Fatal("the original must NOT be deleted when resolving would sever a live-photo pair")
+	}
+}
