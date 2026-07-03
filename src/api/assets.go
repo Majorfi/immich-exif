@@ -197,7 +197,10 @@ func (c *ImmichClient) CopyAsset(sourceID, destinationID string) error {
 	if err != nil {
 		return err
 	}
-	req, err := c.newRequest(c.writeMethod(), "/assets/copy", bytes.NewReader(jsonBody))
+	// Always PUT: v3.0.1 has no PATCH alias for /assets/copy — a PATCH is
+	// routed into PATCH /assets/:id with id="copy" and fails UUID validation
+	// (confirmed against a live 3.0.1 server and its OpenAPI spec).
+	req, err := c.newRequest(http.MethodPut, "/assets/copy", bytes.NewReader(jsonBody))
 	if err != nil {
 		return err
 	}

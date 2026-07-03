@@ -7,11 +7,11 @@ The tool uses a verify-before-delete process:
 1. **GET /assets/{id}** — Re-fetch the asset right before upload; if `updatedAt` changed since the initial scan (metadata edited server-side mid-run), the asset is skipped so a re-run picks up the fresh state
 2. **POST /assets** — Upload the modified file as a new asset (forwarding `livePhotoVideoId` so live-photo pairs survive)
 3. **GET /assets/{id}** — By default, re-fetch the new asset and verify its stored checksum matches the local file. A mismatch aborts before any delete, leaving the original intact. Skipped with `-no-verify-upload`.
-4. **PATCH /assets/copy** (PUT on legacy servers) — Copy all associations (albums, favorites, shared links, sidecars, stacks) from old to new
+4. **PUT /assets/copy** — Copy all associations (albums, favorites, shared links, sidecars, stacks) from old to new (no PATCH alias exists for this endpoint on v3.0.1)
 5. **PATCH /assets** (PUT on legacy servers) — Restore visibility if the original was archived or had non-default visibility
 6. **DELETE /assets** — Move the original to Immich's trash (`force=false`, recoverable). The delete is never permanent: checksum verification proves the transfer, not exiftool's output, so the trash window is kept as the recovery path.
 
-Immich v3 deprecated PUT on the mutating asset endpoints (removed in v4); the client sends PATCH on v3+ and PUT on legacy servers, selected by `writeMethod()`.
+Immich v3 deprecated PUT on the bulk asset update endpoint (removed in v4); the client sends PATCH there on v3+ and PUT on legacy servers, selected by `writeMethod()`. `/assets/copy` stays PUT everywhere: v3.0.1 has no PATCH alias for it — a PATCH is routed into `PATCH /assets/:id` and fails UUID validation (found by a live run).
 
 Upload is sent as a streamed multipart request (chunked), so large files are not buffered fully in memory.
 
@@ -108,7 +108,7 @@ src/
 | GET         | `/api/assets/{id}/original` | Download original file                                         |
 | POST        | `/api/assets`               | Upload new asset (multipart)                                   |
 | PATCH / PUT | `/api/assets`               | Update asset visibility (PATCH on v3+, PUT on legacy)          |
-| PATCH / PUT | `/api/assets/copy`          | Copy associations between assets (PATCH on v3+, PUT on legacy) |
+| PUT         | `/api/assets/copy`          | Copy associations between assets (no PATCH alias on v3)      |
 | DELETE      | `/api/assets`               | Batch delete assets (always `force=false`, trash)              |
 | POST        | `/api/search/metadata`      | Paginated asset listing + album enumeration (per visibility)   |
 | GET         | `/api/albums`               | List all albums                                                |

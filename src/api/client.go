@@ -87,9 +87,10 @@ func (c *ImmichClient) newRequest(method, path string, body io.Reader) (*http.Re
 	return req, nil
 }
 
-// writeMethod is the HTTP verb for the mutating asset endpoints (/assets and
-// /assets/copy). Immich v3 deprecated PUT in favor of PATCH and removes PUT in
-// v4, but PATCH does not exist on legacy servers, so send PATCH only on v3+.
+// writeMethod is the HTTP verb for the bulk asset update endpoint (/assets).
+// Immich v3 deprecated PUT there in favor of PATCH (PUT goes away in v4), but
+// PATCH does not exist on legacy servers, so send PATCH only on v3+. This does
+// NOT apply to /assets/copy, which has no PATCH alias on v3.0.1.
 func (c *ImmichClient) writeMethod() string {
 	if c.apiV3 {
 		return http.MethodPatch
