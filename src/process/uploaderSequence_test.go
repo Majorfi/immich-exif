@@ -17,8 +17,8 @@ import (
 )
 
 // Pins the full finalize sequence on a v3 server: checksum verification runs
-// BEFORE associations are copied, both mutations use PATCH, and the delete is
-// a trash move. A refactor reordering verify/copy or hardcoding PUT fails here.
+// BEFORE associations are copied, copy stays PUT (no PATCH alias on v3.0.1),
+// the visibility update uses PATCH, and the delete is a trash move.
 func TestModernUploaderV3SequenceVerifiesBeforeCopy(t *testing.T) {
 	content := []byte("uploaded-bytes")
 	sum := sha1.Sum(content)
@@ -39,7 +39,7 @@ func TestModernUploaderV3SequenceVerifiesBeforeCopy(t *testing.T) {
 		case "GET /api/assets/new-id":
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(model.AssetResponse{ID: "new-id", Checksum: base64.StdEncoding.EncodeToString(sum[:])})
-		case "PATCH /api/assets/copy":
+		case "PUT /api/assets/copy":
 			w.WriteHeader(http.StatusNoContent)
 		case "PATCH /api/assets":
 			w.WriteHeader(http.StatusNoContent)
@@ -78,7 +78,7 @@ func TestModernUploaderV3SequenceVerifiesBeforeCopy(t *testing.T) {
 		"GET /api/server/about",
 		"POST /api/assets",
 		"GET /api/assets/new-id",
-		"PATCH /api/assets/copy",
+		"PUT /api/assets/copy",
 		"PATCH /api/assets",
 		"DELETE /api/assets",
 	}

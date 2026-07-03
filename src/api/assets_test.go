@@ -338,10 +338,13 @@ func TestCopyAssetSendsCorrectPayload(t *testing.T) {
 	}
 }
 
-func TestCopyAssetUsesPatchOnV3(t *testing.T) {
+// /assets/copy has no PATCH alias on v3.0.1 (a PATCH is routed into
+// PATCH /assets/:id and fails UUID validation), so copy must stay PUT even
+// when the client runs in v3 mode.
+func TestCopyAssetAlwaysUsesPut(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPatch {
-			t.Fatalf("expected PATCH on v3, got %s", r.Method)
+		if r.Method != http.MethodPut {
+			t.Fatalf("expected PUT for /assets/copy, got %s", r.Method)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
