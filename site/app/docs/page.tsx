@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 
 const GITHUB = "https://github.com/Majorfi/immich-exif";
 
-const DOCS_TITLE = "Documentation — immich-exif";
+const DOCS_TITLE = "Documentation — Immich Exif";
 const DOCS_DESCRIPTION =
-  "Install, configure and run immich-exif: flags, the metadata tags it writes, export mode, the incremental cache, and how it keeps your photos safe.";
+  "Install, configure and run Immich Exif: flags, the metadata tags it writes, export mode, the incremental cache, and how it keeps your photos safe.";
 
 export const metadata: Metadata = {
   title: DOCS_TITLE,
@@ -206,7 +206,7 @@ export default function Docs() {
           className="flex items-center gap-2 text-[15px] font-semibold"
         >
           <img src="/logo.svg" alt="" className="h-7 w-7" />
-          <span className="font-mono">immich-exif</span>
+          <span className="font-mono">Immich Exif</span>
         </a>
         <div className="flex items-center gap-2">
           <a
@@ -254,7 +254,7 @@ export default function Docs() {
               Documentation
             </h1>
             <p className="mt-3 text-[15px]">
-              immich-exif is a command-line tool. Point it at your Immich
+              Immich Exif is a command-line tool. Point it at your Immich
               server, pick what to process, and it writes the metadata Immich
               knows back into your files.
             </p>
@@ -441,7 +441,7 @@ immich-exif -all                    # the whole library`}</Code>
             <p>
               Immich returns ISO 8601 dates like{" "}
               <span className="kbd">2025-12-10T16:56:36+00:00</span>. EXIF
-              stores local time plus a separate offset. immich-exif reconciles
+              stores local time plus a separate offset. Immich Exif reconciles
               the two:
             </p>
             <ul className="space-y-2">
@@ -505,7 +505,7 @@ immich-exif -all                    # the whole library`}</Code>
           <section className="space-y-4">
             <H2 id="safety">Safety</H2>
             <p>
-              immich-exif re-uploads and deletes real assets, so the destructive
+              Immich Exif re-uploads and deletes real assets, so the destructive
               path is the careful one.
             </p>
             <ul className="space-y-2">
@@ -527,7 +527,7 @@ immich-exif -all                    # the whole library`}</Code>
           <section className="space-y-4">
             <H2 id="ui">Interactive mode</H2>
             <p>
-              immich-exif prints a diff per asset and waits for a single
+              Immich Exif prints a diff per asset and waits for a single
               keypress:
             </p>
             <Code>{`[1/5] 2 EXIF mismatch found for IMG_1234.jpg:

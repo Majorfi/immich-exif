@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 
 export const alt =
-  "immich-exif: write your Immich metadata back into your files";
+  "Immich Exif: write your Immich metadata back into your files";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -49,7 +49,7 @@ export default function Image() {
           color: "#0a0a0a",
         }}
       >
-        immich-exif
+        Immich Exif
       </div>
       <div
         style={{

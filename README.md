@@ -1,4 +1,4 @@
-# immich-exif
+# Immich Exif
 
 ## Beta
 
