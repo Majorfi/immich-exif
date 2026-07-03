@@ -57,7 +57,7 @@ const SAFETY = [
   {
     title: "Permanent only when verified",
     description:
-      "A verified original is permanently deleted, because the new copy is provably byte-identical. Pass -no-verify-upload to skip the check and the original goes to Immich's trash instead, where you can still recover it.",
+      "The re-upload is checksum-verified before the original is touched, and the original always goes to Immich's trash — never a permanent delete — so it stays recoverable either way.",
   },
   {
     title: "Dry-run anything",
@@ -116,7 +116,7 @@ const FAQ = [
   },
   {
     q: "Can it lose my photos?",
-    a: "It's built hard against that. The new asset is uploaded before the old one is deleted, so an interruption leaves a duplicate, never a hole. By default the upload is checksum-verified byte-for-byte (and downloads are verified too) before the original is removed; only a provably identical copy lets the original be permanently deleted. If you pass -no-verify-upload to skip that check, the original is moved to Immich's trash instead, so it stays recoverable. And -dry-run lets you see every change first.",
+    a: "It's built hard against that. The new asset is uploaded before the old one is deleted, so an interruption leaves a duplicate, never a hole. By default the upload is checksum-verified byte-for-byte (and downloads are verified too) before the original is touched, and the original always goes to Immich's trash — never a permanent delete — so it stays recoverable even after a successful replacement. And -dry-run lets you see every change first.",
   },
   {
     q: "What do I need?",

@@ -20,7 +20,7 @@ For each asset:
   6. Show the diff, ask to confirm / skip / quit
   7. Write missing tags into the file (exiftool)
   8. Re-upload, copy associations, restore visibility
-  9. Verify the re-uploaded asset's checksum, then delete the original
+  9. Verify the re-uploaded asset's checksum, then move the original to Immich's trash
 ```
 
 Assets that already have matching metadata are skipped automatically, making it safe to run repeatedly.
@@ -32,7 +32,9 @@ The destructive path is the careful path. By default the tool will not delete an
 
 - **Downloads are checksum-verified** — a corrupt or truncated download is rejected before any tag is written or uploaded.
 - **Uploads are checksum-verified by default** — the re-uploaded asset is re-fetched and its checksum compared to the local file before the original is touched. A mismatch refuses to delete the original.
-- **Permanent only when verified** — a verified original is deleted permanently (the new copy is provably byte-identical). With `-no-verify-upload` the check is skipped and the original is moved to Immich's **trash** instead, where it stays recoverable.
+- **Trash, never permanent delete** — the replaced original always goes to Immich's **trash**, where it stays recoverable. Checksum verification proves the transfer was intact, not that exiftool produced a valid file, so the trash window is kept as the last-resort recovery path.
+- **Live photos stay paired** — the still's `livePhotoVideoId` is forwarded on re-upload, and hidden videos (live-photo motion parts) are skipped rather than replaced, which would sever the pair.
+- **Mid-run edits are respected** — the asset is re-checked right before upload; if its metadata changed on the server while the tool was working, it is skipped instead of overwritten.
 - **`-dry-run`** writes nothing and shows every change first.
 - The API key is refused over plaintext `http://` unless you pass `-allow-http`.
 
@@ -117,13 +119,13 @@ On Immich 1.113+ you can scope the API key to exactly what the tool needs (older
 
 | Permission       | Why                                                       |
 | ---------------- | --------------------------------------------------------- |
-| `server.about`   | Connectivity and server-version detection                 |
+| `server.about`   | Server-version detection (optional with a forced `-immich-api`) |
 | `asset.read`     | Read asset metadata and page the library and albums       |
 | `asset.download` | Download the original file                                |
 | `asset.upload`   | Re-upload the metadata-corrected file                     |
 | `asset.copy`     | Copy associations (albums, favorites, …) to the new asset |
 | `asset.update`   | Restore visibility for archived or hidden assets          |
-| `asset.delete`   | Remove the old original after a verified replacement      |
+| `asset.delete`   | Trash the old original after a verified replacement       |
 | `album.read`     | Resolve `-album` / `-album all` selections                |
 
 Read-only modes need less: `-dry-run` and `-export-dir` never write to the server, so they only require `server.about`, `asset.read`, `asset.download`, and `album.read` (drop `album.read` too if you only pass asset IDs).
@@ -140,19 +142,20 @@ immich-exif [flags] [asset-ids...]
 | -------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------- |
 | `-url`               | `$IMMICH_URL`     | Immich server URL                                                                                               |
 | `-api-key`           | `$IMMICH_API_KEY` | API key                                                                                                         |
-| `-immich-api`        | `auto`            | API contract: `auto` (detect from server version), `legacy`, or `v3`                                            |
+| `-immich-api`        | `auto`            | API contract: `auto` (detect; assumes `v3` when unsure), `v3`, or `legacy`                                      |
 | `-workers`           | `1`               | Number of parallel workers                                                                                      |
 | `-dry-run`           | `false`           | Embed EXIF locally but skip re-upload                                                                           |
 | `-export-dir`        |                   | Save modified files to a directory instead of re-uploading (fails if file exists)                               |
 | `-y`                 | `false`           | Auto-confirm all changes                                                                                        |
-| `-no-verify-upload`  | `false`           | Skip the post-upload checksum verification; the original is moved to trash instead of being permanently deleted |
+| `-no-verify-upload`  | `false`           | Skip the post-upload checksum verification that gates the replacement                                           |
 | `-allow-http`        | `false`           | Allow a plaintext `http://` server URL (the API key is sent in clear text)                                      |
 | `-list-albums`       | `false`           | List your albums (ID and name) and exit                                                                         |
 | `-resolve-duplicate` | `false`           | On duplicate upload status, copy associations to duplicate asset and delete old asset                           |
 | `-include-no-album`  | `true`            | With album-mirrored export, include assets with no album under `no-album/`                                      |
 | `-all`               | `false`           | Select the all-assets mode (timeline, archived and hidden); equivalent to `-album all`                          |
-| `-force`             | `false`           | Force re-processing all assets, ignoring state cache                                                            |
+| `-force`             | `false`           | Ignore the state cache and re-process (only valid with `-all` / `-album all`)                                   |
 | `-album`             |                   | Album ID to process (repeatable), or `all` as an alias of `-all`                                                |
+| `-version`           | `false`           | Print the version and exit                                                                                      |
 
 ### Asset selection
 

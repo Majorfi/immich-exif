@@ -4,22 +4,27 @@
 
 The tool uses a verify-before-delete process:
 
-1. **POST /assets** — Upload the modified file as a new asset
-2. **GET /assets/{id}** — By default, re-fetch the new asset and verify its stored checksum matches the local file. A mismatch aborts before any delete, leaving the original intact. Skipped with `-no-verify-upload`.
-3. **PUT /assets/copy** — Copy all associations (albums, favorites, shared links, sidecars, stacks) from old to new
-4. **PUT /assets** — Restore visibility if the original was archived or had non-default visibility
-5. **DELETE /assets** — Delete the original: permanently (`force=true`) when the upload was verified, or to Immich's trash (`force=false`, recoverable) when verification is disabled
+1. **GET /assets/{id}** — Re-fetch the asset right before upload; if `updatedAt` changed since the initial scan (metadata edited server-side mid-run), the asset is skipped so a re-run picks up the fresh state
+2. **POST /assets** — Upload the modified file as a new asset (forwarding `livePhotoVideoId` so live-photo pairs survive)
+3. **GET /assets/{id}** — By default, re-fetch the new asset and verify its stored checksum matches the local file. A mismatch aborts before any delete, leaving the original intact. Skipped with `-no-verify-upload`.
+4. **PATCH /assets/copy** (PUT on legacy servers) — Copy all associations (albums, favorites, shared links, sidecars, stacks) from old to new
+5. **PATCH /assets** (PUT on legacy servers) — Restore visibility if the original was archived or had non-default visibility
+6. **DELETE /assets** — Move the original to Immich's trash (`force=false`, recoverable). The delete is never permanent: checksum verification proves the transfer, not exiftool's output, so the trash window is kept as the recovery path.
+
+Immich v3 deprecated PUT on the mutating asset endpoints (removed in v4); the client sends PATCH on v3+ and PUT on legacy servers, selected by `writeMethod()`.
 
 Upload is sent as a streamed multipart request (chunked), so large files are not buffered fully in memory.
 
-The download itself is checksum-verified (Content-Length + SHA-1 against the asset's stored checksum) so a corrupt or truncated transfer never reaches the upload/delete steps.
+The download itself is checksum-verified (Content-Length + SHA-1 against the asset's stored checksum) so a corrupt or truncated transfer never reaches the upload/delete steps. An asset the server returns no checksum for is refused outright.
+
+Hidden videos are skipped entirely: they are almost always the motion half of a live photo, and replacing one would give it a new ID and permanently sever the still photo's `livePhotoVideoId` link.
 
 If the upload returns the same asset ID, copy/delete is skipped.
 
 If upload returns `duplicate`/`replaced`:
 
 - default behavior: copy/delete is skipped and the result is marked as skipped (not cached)
-- with `-resolve-duplicate`: for `duplicate` with different ID, the tool copies associations to that duplicate asset and deletes the old asset
+- with `-resolve-duplicate`: for `duplicate` with different ID, the tool copies associations to that duplicate asset and trashes the old asset — unless the duplicate itself sits in the trash, in which case it refuses and asks you to restore it first (deleting the original against a trashed duplicate would leave the only surviving copy pending auto-purge)
 
 When duplicates are skipped (default mode), a final summary lists them and prints a command you can rerun with `-resolve-duplicate`. If running in an interactive terminal, the tool also prompts to patch them immediately without re-running.
 
@@ -35,7 +40,7 @@ main.go
   +-- resolveAssetIDs()            --all / --album / positional IDs
   |                                (shouldSkip callback filters cached assets)
   |
-  +-- runClassic()                 Console mode + ui.LogEmitter
+  +-- runPipeline()                Console mode + ui.LogEmitter
   |    |
   |    +-- process.WorkerPool.Process(assetIDs)
   |         |
@@ -64,17 +69,19 @@ src/
   model/
     types.go          Data structures (Config, AssetResponse, ExifInfo, etc.)
     events.go         Event types and EventEmitter interface
-    assetType.go      Asset classification (video detection, mime types)
-    helpers.go        ShortID, TruncateFilename
+    assetType.go      Asset classification (video detection, live-photo motion)
+    checksum.go       SHA-1 checksum decoding (base64/hex)
+    helpers.go        ShortID, TruncateFilename, SanitizeForTerminal
 
   exif/
     tool.go           EXIF read and write (exiftool subprocess)
     compare.go        Metadata comparison, diff generation, exiftool arg building
-    match.go          Value matching helpers (float, string, int, datetime)
+    compareDateTime.go Date/offset comparison, time-zone anchoring
+    match.go          Value matching helpers (float, string, int, datetime, zones)
     video.go          Video-specific metadata comparison and routing
 
   api/
-    client.go         HTTP client base (request, JSON, API version detection)
+    client.go         HTTP client base (transport, redirects, API version detection)
     assets.go         Asset CRUD (get, download, upload, copy, delete)
     search.go         Search, list albums, paginated asset listing
 
@@ -85,24 +92,26 @@ src/
     pipeline.go       Per-asset processing orchestration
     worker.go         Worker pool with cancellation
     uploader.go       Upload interface and ModernUploader
+    verify.go         Post-upload checksum verification
 
   ui/
     emitterLog.go     Console emitter with single-keypress input
+    color.go          ANSI color helpers with terminal detection
 ```
 
 ## Immich API endpoints used
 
-| Method | Endpoint                    | Purpose                                                      |
-| ------ | --------------------------- | ------------------------------------------------------------ |
-| GET    | `/api/server/about`         | Server version detection + connectivity                      |
-| GET    | `/api/assets/{id}`          | Fetch asset metadata and EXIF                                |
-| GET    | `/api/assets/{id}/original` | Download original file                                       |
-| POST   | `/api/assets`               | Upload new asset (multipart)                                 |
-| PUT    | `/api/assets`               | Update asset visibility                                      |
-| PUT    | `/api/assets/copy`          | Copy associations between assets                             |
-| DELETE | `/api/assets`               | Batch delete assets                                          |
-| POST   | `/api/search/metadata`      | Paginated asset listing + album enumeration (per visibility) |
-| GET    | `/api/albums`               | List all albums                                              |
-| GET    | `/api/albums/{id}`          | Get album with asset list                                    |
+| Method      | Endpoint                    | Purpose                                                        |
+| ----------- | --------------------------- | -------------------------------------------------------------- |
+| GET         | `/api/server/about`         | Server version detection (best-effort in forced modes)         |
+| GET         | `/api/assets/{id}`          | Fetch asset metadata and EXIF                                  |
+| GET         | `/api/assets/{id}/original` | Download original file                                         |
+| POST        | `/api/assets`               | Upload new asset (multipart)                                   |
+| PATCH / PUT | `/api/assets`               | Update asset visibility (PATCH on v3+, PUT on legacy)          |
+| PATCH / PUT | `/api/assets/copy`          | Copy associations between assets (PATCH on v3+, PUT on legacy) |
+| DELETE      | `/api/assets`               | Batch delete assets (always `force=false`, trash)              |
+| POST        | `/api/search/metadata`      | Paginated asset listing + album enumeration (per visibility)   |
+| GET         | `/api/albums`               | List all albums                                                |
+| GET         | `/api/albums/{id}`          | Get album with asset list                                      |
 
-All requests are authenticated via `x-api-key` header.
+All requests are authenticated via `x-api-key` header. v3 is the primary API contract: version detection assumes v3 when the reported version is unrecognizable, and `-immich-api legacy` forces the older contract. Redirects that leave the configured host (or downgrade https to http) are refused so the key cannot leak.

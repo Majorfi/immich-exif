@@ -47,7 +47,7 @@ const FLAGS = [
   {
     flag: "-immich-api",
     def: "auto",
-    desc: "API contract: auto, legacy, or v3. auto detects the server version.",
+    desc: "API contract: auto (detects; assumes v3 when unsure), v3, or legacy.",
   },
   {
     flag: "-dry-run",
@@ -87,7 +87,7 @@ const FLAGS = [
   {
     flag: "-no-verify-upload",
     def: "false",
-    desc: "Skip checksum verification; the original is moved to Immich trash instead of being permanently deleted.",
+    desc: "Skip the checksum verification that gates the replacement. The original goes to Immich trash either way.",
   },
   {
     flag: "-allow-http",
@@ -102,17 +102,25 @@ const FLAGS = [
   {
     flag: "-resolve-duplicate",
     def: "false",
-    desc: "On a duplicate upload, move associations to the duplicate and delete the old asset.",
+    desc: "On a duplicate upload, move associations to the duplicate and trash the old asset.",
   },
   {
     flag: "-force",
     def: "false",
-    desc: "Ignore the state cache and re-check every asset.",
+    desc: "Ignore the state cache and re-check every asset. Only valid with -all or -album all.",
+  },
+  {
+    flag: "-version",
+    def: "false",
+    desc: "Print the version and exit.",
   },
 ];
 
 const PERMISSIONS = [
-  { perm: "server.about", why: "Connectivity and server-version detection." },
+  {
+    perm: "server.about",
+    why: "Server-version detection. Optional with a forced -immich-api.",
+  },
   {
     perm: "asset.read",
     why: "Read asset metadata and page the library and albums.",
@@ -293,6 +301,14 @@ go build -o immich-exif .`}</Code>
               </a>
               .
             </p>
+            <p>
+              No exiftool at hand (a NAS, a bare server)? The Docker image
+              bundles it:
+            </p>
+            <Code>{`docker run --rm \\
+  -e IMMICH_URL=https://your-immich-server.com \\
+  -e IMMICH_API_KEY=your-api-key \\
+  ghcr.io/majorfi/immich-exif:latest -dry-run <asset-id>`}</Code>
           </section>
 
           <section className="space-y-4">
@@ -512,7 +528,7 @@ immich-exif -all                    # the whole library`}</Code>
               {[
                 "The new asset is uploaded and its associations copied before the old one is removed. An interruption leaves a duplicate, never a hole.",
                 "Checksum verification is on by default: the uploaded asset is re-fetched and its checksum compared to the local file, and downloads are verified the same way. A mismatch refuses to delete the original.",
-                "When verification passes (the default), the original is permanently deleted, because the new copy is provably byte-identical. Pass -no-verify-upload to skip the check and the original is moved to Immich's trash instead, where it stays recoverable.",
+                "The replaced original always goes to Immich's trash, where it stays recoverable — verification proves the transfer, not that exiftool produced a valid file, so the trash window is kept as the last-resort recovery path. Pass -no-verify-upload to skip the checksum check that gates the replacement.",
                 "By default a plaintext http:// server URL is rejected so the API key never travels in clear text; pass -allow-http to override that.",
                 "-dry-run shows every change and writes nothing, so you can confirm exactly what will happen first.",
               ].map((line) => (
