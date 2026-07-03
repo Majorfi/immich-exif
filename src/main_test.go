@@ -1373,7 +1373,7 @@ func TestRunDryRunHappyPath(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/original"):
 			w.Write([]byte("imagedata"))
 		default:
-			json.NewEncoder(w).Encode(model.AssetResponse{ID: "a1", OriginalFileName: "p.jpg", ExifInfo: &model.ExifInfo{Description: &desc}})
+			json.NewEncoder(w).Encode(model.AssetResponse{ID: "a1", OriginalFileName: "p.jpg", Checksum: "17823b70fb444e73d1eb356a4af993f6fba77489", ExifInfo: &model.ExifInfo{Description: &desc}})
 		}
 	}))
 	defer server.Close()
@@ -1422,5 +1422,109 @@ func TestRunListAlbums(t *testing.T) {
 	}
 	if !strings.Contains(out, "alb-1") || !strings.Contains(out, "Vacation") {
 		t.Fatalf("expected album listing in output, got %q", out)
+	}
+}
+
+// A context cancelled before (or during) the run must cancel the pool: every
+// pending asset resolves as "user cancelled" and nothing touches the server.
+func TestRunPipelineCancelledContextCancelsAllAssets(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cfg := &model.Config{Workers: 2, Yes: true}
+	var results []model.ProcessResult
+	captureStdout(func() {
+		results = runPipeline(ctx, nil, nil, cfg, []string{"a1", "a2", "a3"})
+	})
+
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+	for i, r := range results {
+		if r.Message != "user cancelled" {
+			t.Fatalf("result[%d]: expected user cancelled, got %q (status %s)", i, r.Message, r.Status)
+		}
+	}
+}
+
+func TestWarnIfServerTrashDisabled(t *testing.T) {
+	trashEnabled := true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/server/features" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"trash":%t}`, trashEnabled)
+	}))
+	defer server.Close()
+
+	client := api.NewImmichClient(server.URL, "k")
+
+	out := captureStderr(t, func() { warnIfServerTrashDisabled(client) })
+	if strings.Contains(out, "trash feature DISABLED") {
+		t.Fatalf("no warning expected when trash is enabled, got %q", out)
+	}
+
+	trashEnabled = false
+	out = captureStderr(t, func() { warnIfServerTrashDisabled(client) })
+	if !strings.Contains(out, "trash feature DISABLED") {
+		t.Fatalf("expected trash-disabled warning, got %q", out)
+	}
+
+	unreachable := api.NewImmichClient("http://localhost:1", "k")
+	out = captureStderr(t, func() { warnIfServerTrashDisabled(unreachable) })
+	if out != "" {
+		t.Fatalf("features probe must be best-effort, got %q", out)
+	}
+}
+
+// A planted .env that supplies only IMMICH_URL would redirect an API key taken
+// from the shell environment; the warning is the safeguard.
+func TestParseConfigWarnsWhenDotenvSuppliesOnlyURL(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile(".env", []byte("IMMICH_URL=https://planted.example\n"), 0600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+	t.Setenv("IMMICH_API_KEY", "shell-key")
+	t.Setenv("IMMICH_URL", "")
+	os.Unsetenv("IMMICH_URL")
+
+	defer setupConfigTest([]string{"immich-exif", "-y", "-all"})()
+	var cfg *model.Config
+	var err error
+	out := captureStderr(t, func() { cfg, err = parseConfig() })
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.URL != "https://planted.example" {
+		t.Fatalf("expected .env URL, got %q", cfg.URL)
+	}
+	if !strings.Contains(out, "IMMICH_URL comes from ./.env") {
+		t.Fatalf("expected .env provenance warning, got %q", out)
+	}
+}
+
+func TestParseConfigNoDotenvWarningWhenBothFromDotenv(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	env := "IMMICH_URL=https://mine.example\nIMMICH_API_KEY=my-key\n"
+	if err := os.WriteFile(".env", []byte(env), 0600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+	t.Setenv("IMMICH_URL", "")
+	os.Unsetenv("IMMICH_URL")
+	t.Setenv("IMMICH_API_KEY", "")
+	os.Unsetenv("IMMICH_API_KEY")
+
+	defer setupConfigTest([]string{"immich-exif", "-y", "-all"})()
+	var err error
+	out := captureStderr(t, func() { _, err = parseConfig() })
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(out, "IMMICH_URL comes from ./.env") {
+		t.Fatalf("no provenance warning expected when both values come from .env, got %q", out)
 	}
 }

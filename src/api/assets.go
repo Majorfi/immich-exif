@@ -2,12 +2,14 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -16,7 +18,7 @@ import (
 )
 
 func (c *ImmichClient) GetAsset(assetID string) (*model.AssetResponse, error) {
-	req, err := c.newRequest(http.MethodGet, "/assets/"+assetID, nil)
+	req, err := c.newRequest(http.MethodGet, "/assets/"+url.PathEscape(assetID), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -29,11 +31,15 @@ func (c *ImmichClient) GetAsset(assetID string) (*model.AssetResponse, error) {
 }
 
 func (c *ImmichClient) DownloadAsset(assetID, destPath, expectedChecksum string) (err error) {
-	req, err := c.newRequest(http.MethodGet, "/assets/"+assetID+"/original", nil)
+	req, err := c.newRequest(http.MethodGet, "/assets/"+url.PathEscape(assetID)+"/original", nil)
 	if err != nil {
 		return err
 	}
-	resp, err := c.doRequest(req)
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+	watchdog := newProgressWatchdog(cancel)
+	defer watchdog.Stop()
+	resp, err := c.doRequest(req.WithContext(ctx))
 	if err != nil {
 		return err
 	}
@@ -54,8 +60,11 @@ func (c *ImmichClient) DownloadAsset(assetID, destPath, expectedChecksum string)
 	}()
 
 	hasher := sha1.New()
-	written, err := io.Copy(io.MultiWriter(f, hasher), resp.Body)
+	written, err := io.Copy(io.MultiWriter(f, hasher), watchdogReader{reader: resp.Body, watchdog: watchdog})
 	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("download stalled: no progress for %v", stallTimeout)
+		}
 		return fmt.Errorf("write file: %w", err)
 	}
 
@@ -94,9 +103,18 @@ func (c *ImmichClient) UploadAsset(filePath string, asset *model.AssetResponse) 
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Accept", "application/json")
 
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+	watchdog := newProgressWatchdog(cancel)
+	req = req.WithContext(ctx)
+
 	go func() {
 		var writeErr error
 		defer func() {
+			// Once the body is fully written the server may legitimately take a
+			// while to answer (checksumming a large upload); that phase is
+			// bounded by ResponseHeaderTimeout, not the stall watchdog.
+			watchdog.Stop()
 			pw.CloseWithError(writeErr)
 		}()
 
@@ -105,7 +123,7 @@ func (c *ImmichClient) UploadAsset(filePath string, asset *model.AssetResponse) 
 			writeErr = err
 			return
 		}
-		if _, err := io.Copy(part, f); err != nil {
+		if _, err := io.Copy(watchdogWriter{writer: part, watchdog: watchdog}, f); err != nil {
 			writeErr = err
 			return
 		}
@@ -140,6 +158,14 @@ func (c *ImmichClient) UploadAsset(filePath string, asset *model.AssetResponse) 
 			writeErr = err
 			return
 		}
+		// Preserve the live-photo pairing: without this the replacement still
+		// would permanently lose its link to the motion video.
+		if asset.LivePhotoVideoID != "" {
+			if err := w.WriteField("livePhotoVideoId", asset.LivePhotoVideoID); err != nil {
+				writeErr = err
+				return
+			}
+		}
 
 		if err := w.Close(); err != nil {
 			writeErr = err
@@ -149,6 +175,9 @@ func (c *ImmichClient) UploadAsset(filePath string, asset *model.AssetResponse) 
 
 	var resp model.UploadResponse
 	if err := c.doJSON(req, &resp); err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("upload stalled: no progress for %v", stallTimeout)
+		}
 		return nil, err
 	}
 	return &resp, nil

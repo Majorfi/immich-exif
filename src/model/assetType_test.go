@@ -111,3 +111,24 @@ func TestIsUnsupportedVideoAsset(t *testing.T) {
 		})
 	}
 }
+
+func TestIsLivePhotoMotionCandidate(t *testing.T) {
+	cases := []struct {
+		name  string
+		asset AssetResponse
+		want  bool
+	}{
+		{name: "hidden video", asset: AssetResponse{OriginalMimeType: "video/quicktime", Visibility: "hidden"}, want: true},
+		{name: "hidden video by extension", asset: AssetResponse{OriginalFileName: "motion.mov", Visibility: "Hidden"}, want: true},
+		{name: "timeline video", asset: AssetResponse{OriginalMimeType: "video/mp4", Visibility: "timeline"}, want: false},
+		{name: "hidden image", asset: AssetResponse{OriginalMimeType: "image/jpeg", Visibility: "hidden"}, want: false},
+		{name: "no visibility", asset: AssetResponse{OriginalMimeType: "video/mp4"}, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsLivePhotoMotionCandidate(tc.asset); got != tc.want {
+				t.Fatalf("IsLivePhotoMotionCandidate(%v) = %v, want %v", tc.asset, got, tc.want)
+			}
+		})
+	}
+}

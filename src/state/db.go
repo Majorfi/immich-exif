@@ -62,6 +62,13 @@ func OpenStateDB(dbPath, serverURL string) (*StateDB, error) {
 		return nil, fmt.Errorf("set WAL mode: %w", err)
 	}
 
+	// Without a busy handler a concurrent immich-exif run makes writes fail
+	// instantly with SQLITE_BUSY and silently drops cache entries.
+	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("set busy timeout: %w", err)
+	}
+
 	createSQL := `CREATE TABLE IF NOT EXISTS assets (
 		serverURL TEXT NOT NULL,
 		assetID TEXT NOT NULL,

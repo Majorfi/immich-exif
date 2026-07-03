@@ -28,7 +28,7 @@ func TestProcessAssetExportMirrorsAcrossAlbumFolders(t *testing.T) {
 	}
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusSuccess {
 		t.Fatalf("expected success, got %s", result.Status)
 	}
@@ -74,7 +74,7 @@ func TestProcessAssetExportMirrorsIntoNoAlbumFolder(t *testing.T) {
 	}
 
 	client := api.NewImmichClient(server.URL, "key")
-	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{})
+	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{}, nil)
 	if result.Status != model.StatusSuccess {
 		t.Fatalf("expected success, got %s", result.Status)
 	}

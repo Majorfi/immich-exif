@@ -23,11 +23,15 @@ func (s *stringSlice) Set(v string) error {
 }
 
 func parseConfig() (*model.Config, error) {
+	urlSetBeforeDotenv := os.Getenv("IMMICH_URL") != ""
+	keySetBeforeDotenv := os.Getenv("IMMICH_API_KEY") != ""
 	if err := godotenv.Load(); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("load .env: %w", err)
 		}
 	}
+	urlFromDotenv := !urlSetBeforeDotenv && os.Getenv("IMMICH_URL") != ""
+	keyFromDotenv := !keySetBeforeDotenv && os.Getenv("IMMICH_API_KEY") != ""
 
 	cfg := &model.Config{}
 	var albums stringSlice
@@ -37,12 +41,12 @@ func parseConfig() (*model.Config, error) {
 
 	flag.StringVar(&cfg.URL, "url", os.Getenv("IMMICH_URL"), "Immich server URL (env: IMMICH_URL)")
 	flag.StringVar(&cfg.APIKey, "api-key", os.Getenv("IMMICH_API_KEY"), "API key (env: IMMICH_API_KEY)")
-	flag.StringVar(&cfg.ImmichAPI, "immich-api", "auto", "Immich API contract: auto (detect), legacy, or v3")
+	flag.StringVar(&cfg.ImmichAPI, "immich-api", "auto", "Immich API contract: auto (detect; assumes v3 when unsure), v3, or legacy")
 	flag.IntVar(&cfg.Workers, "workers", 1, "Number of parallel workers")
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "Embed EXIF but skip re-upload")
 	flag.StringVar(&cfg.ExportDir, "export-dir", "", "Save files to directory instead of re-uploading")
 	flag.BoolVar(&cfg.Yes, "y", false, "Auto-confirm all changes")
-	flag.BoolVar(&noVerifyUpload, "no-verify-upload", false, "Skip checksum verification; the original is moved to Immich trash instead of being permanently deleted")
+	flag.BoolVar(&noVerifyUpload, "no-verify-upload", false, "Skip checksum verification of the uploaded copy before the original is moved to Immich trash")
 	flag.BoolVar(&allowHTTP, "allow-http", false, "Allow a plaintext http:// server URL (the API key is sent in clear text)")
 	flag.BoolVar(&cfg.ListAlbums, "list-albums", false, "List your albums (ID and name) and exit")
 	flag.BoolVar(&showVersion, "version", false, "Print the version and exit")
@@ -104,6 +108,12 @@ func parseConfig() (*model.Config, error) {
 		return nil, fmt.Errorf("refusing to send the API key over plaintext http:// (%s); use https:// or pass --allow-http to override", cfg.URL)
 	}
 
+	// A planted .env that supplies only IMMICH_URL would silently redirect an
+	// API key taken from the shell environment to another host.
+	if urlFromDotenv && !keyFromDotenv && cfg.APIKey != "" && !flagWasSet("url") {
+		fmt.Fprintf(os.Stderr, "Warning: IMMICH_URL comes from ./.env but your API key does not; make sure this .env is yours (%s)\n", model.SanitizeForTerminal(cfg.URL))
+	}
+
 	if cfg.ListAlbums {
 		return cfg, nil
 	}
@@ -137,14 +147,18 @@ func parseConfig() (*model.Config, error) {
 	return cfg, nil
 }
 
-func warnCredentialHygiene() {
-	apiKeyViaFlag := false
+func flagWasSet(name string) bool {
+	wasSet := false
 	flag.Visit(func(f *flag.Flag) {
-		if f.Name == "api-key" {
-			apiKeyViaFlag = true
+		if f.Name == name {
+			wasSet = true
 		}
 	})
-	if apiKeyViaFlag {
+	return wasSet
+}
+
+func warnCredentialHygiene() {
+	if flagWasSet("api-key") {
 		fmt.Fprintln(os.Stderr, "Warning: --api-key is visible in your shell history and process list; prefer IMMICH_API_KEY or a .env file")
 	}
 	if info, err := os.Stat(".env"); err == nil && info.Mode().Perm()&0o077 != 0 {

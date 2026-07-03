@@ -746,3 +746,84 @@ func TestListAlbumsReturnsAlbums(t *testing.T) {
 		t.Fatalf("unexpected first album: %+v", albums[0])
 	}
 }
+
+// Servers predating the visibility filter (1.x < 1.133) silently strip the
+// field, so the three enumerated scans would be identical: query them once.
+func TestListAllAssetIDsSingleScanOnPreVisibilityServer(t *testing.T) {
+	desc := "d"
+	searchCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/server/about" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"version":"1.120.0"}`))
+			return
+		}
+		searchCalls++
+		var body model.SearchMetadataRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Visibility != "" {
+			t.Fatalf("expected no visibility filter on a pre-1.133 server, got %q", body.Visibility)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(model.SearchMetadataResponse{
+			Assets: model.SearchAssets{Items: []model.AssetResponse{{ID: "a1", ExifInfo: &model.ExifInfo{Description: &desc}}}},
+		})
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "key")
+	if err := c.ResolveAPIMode("auto"); err != nil {
+		t.Fatalf("resolve api mode: %v", err)
+	}
+
+	ids, _, err := c.ListAllAssetIDs(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "a1" {
+		t.Fatalf("expected [a1], got %v", ids)
+	}
+	if searchCalls != 1 {
+		t.Fatalf("expected a single unfiltered scan, got %d", searchCalls)
+	}
+}
+
+func TestListAllAssetIDsSkipsLivePhotoMotionCandidates(t *testing.T) {
+	desc := "d"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body model.SearchMetadataRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		items := []model.AssetResponse{}
+		if body.Visibility == "hidden" {
+			items = append(items, model.AssetResponse{
+				ID:               "motion-1",
+				OriginalFileName: "motion.mov",
+				OriginalMimeType: "video/quicktime",
+				Visibility:       "hidden",
+				ExifInfo:         &model.ExifInfo{Description: &desc},
+			})
+		}
+		if body.Visibility == "timeline" {
+			items = append(items, model.AssetResponse{ID: "still-1", ExifInfo: &model.ExifInfo{Description: &desc}})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(model.SearchMetadataResponse{Assets: model.SearchAssets{Items: items}})
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "key")
+	ids, stats, err := c.ListAllAssetIDs(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "still-1" {
+		t.Fatalf("expected only the still, got %v", ids)
+	}
+	if stats.LivePhotoMotionSkipped != 1 {
+		t.Fatalf("expected 1 live-photo motion skip, got %d", stats.LivePhotoMotionSkipped)
+	}
+}

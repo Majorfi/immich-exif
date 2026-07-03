@@ -47,6 +47,22 @@ func (u *ModernUploader) Upload(filePath string, asset *model.AssetResponse, emi
 
 	if status == "duplicate" {
 		if u.ResolveDuplicate && newID != asset.ID {
+			// The duplicate may be a trashed asset (Immich matches checksums in
+			// the trash); deleting the original against it would leave the only
+			// surviving copy pending auto-purge.
+			duplicate, err := u.Client.GetAsset(newID)
+			if err != nil {
+				return UploadOutcome{}, nonRetryable(fmt.Errorf("fetch duplicate asset %s (old asset %s NOT deleted): %w", model.ShortID(newID), model.ShortID(asset.ID), err))
+			}
+			if duplicate.IsTrashed {
+				return UploadOutcome{}, nonRetryable(fmt.Errorf("duplicate asset %s is in the trash; restore it in Immich before resolving (old asset %s NOT deleted)", model.ShortID(newID), model.ShortID(asset.ID)))
+			}
+			// Resolving onto a duplicate that lacks the live-photo link would
+			// trash the only asset referencing the motion video, severing the
+			// pair for good once the trash purges.
+			if asset.LivePhotoVideoID != "" && duplicate.LivePhotoVideoID == "" {
+				return UploadOutcome{}, nonRetryable(fmt.Errorf("duplicate asset %s lacks the live-photo link of %s; resolving would sever the pair (old asset NOT deleted)", model.ShortID(newID), model.ShortID(asset.ID)))
+			}
 			emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Duplicate detected. Resolving by moving associations to %s and deleting old asset...", newID)})
 			if err := u.finalizeReplacement(filePath, asset, newID, emitter); err != nil {
 				return UploadOutcome{}, nonRetryable(err)
@@ -108,13 +124,11 @@ func (u *ModernUploader) finalizeReplacement(filePath string, asset *model.Asset
 		}
 	}
 
-	permanent := u.VerifyUpload
-	deleteStep := fmt.Sprintf("Moving old asset %s to trash...", model.ShortID(asset.ID))
-	if permanent {
-		deleteStep = fmt.Sprintf("Deleting old asset %s...", model.ShortID(asset.ID))
-	}
-	emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: deleteStep})
-	if err := u.Client.DeleteAssets([]string{asset.ID}, permanent); err != nil {
+	// Always trash, never permanently delete: checksum verification proves the
+	// rewritten bytes arrived intact, not that exiftool produced a valid file,
+	// and the trash window is the only recovery path for that failure mode.
+	emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Moving old asset %s to trash...", model.ShortID(asset.ID))})
+	if err := u.Client.DeleteAssets([]string{asset.ID}, false); err != nil {
 		msg := fmt.Sprintf("WARNING: failed to delete old asset %s: %v (target asset %s is live)", model.ShortID(asset.ID), err, model.ShortID(targetID))
 		emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: msg})
 		return fmt.Errorf("delete old asset failed (target asset %s is live but old %s was not deleted): %w", targetID, asset.ID, err)

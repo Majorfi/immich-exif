@@ -3,6 +3,7 @@ package exif
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -76,16 +77,17 @@ func IntMatch(existing any, expected int) bool {
 	return int(v) == expected
 }
 
-func AllLocationTagValuesMatch(existing ExifTagMap, strictKeys, fallbackKeys []string, expected string) bool {
-	useStrict := false
-	for _, key := range strictKeys {
+func hasAnyTagValue(existing ExifTagMap, keys []string) bool {
+	for _, key := range keys {
 		if existing[key] != nil {
-			useStrict = true
-			break
+			return true
 		}
 	}
+	return false
+}
 
-	if useStrict {
+func AllLocationTagValuesMatch(existing ExifTagMap, strictKeys, fallbackKeys []string, expected string) bool {
+	if hasAnyTagValue(existing, strictKeys) {
 		for _, key := range strictKeys {
 			if !StringMatch(existing[key], expected) {
 				return false
@@ -110,6 +112,64 @@ func ParseDateTime(s string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("unrecognized datetime format: %s", s)
+}
+
+// resolveImmichLocation turns Immich's exifInfo.timeZone into a time.Location.
+// Immich stores either an IANA name ("Europe/Rome") or a fixed offset spelled
+// "UTC+2" / "UTC+02:30". Unknown or missing values return nil so callers keep
+// the server's UTC anchoring.
+func resolveImmichLocation(timeZone *string) *time.Location {
+	if timeZone == nil {
+		return nil
+	}
+	name := strings.TrimSpace(*timeZone)
+	if name == "" {
+		return nil
+	}
+	if loc, err := time.LoadLocation(name); err == nil {
+		return loc
+	}
+	return parseUTCOffsetLocation(name)
+}
+
+func parseUTCOffsetLocation(name string) *time.Location {
+	s := strings.ToUpper(name)
+	s = strings.TrimPrefix(s, "UTC")
+	s = strings.TrimPrefix(s, "GMT")
+	if s == "" {
+		return time.UTC
+	}
+
+	sign := 1
+	switch s[0] {
+	case '+':
+	case '-':
+		sign = -1
+	default:
+		return nil
+	}
+	s = s[1:]
+
+	hoursPart := s
+	minutesPart := "0"
+	if colon := strings.IndexByte(s, ':'); colon >= 0 {
+		hoursPart = s[:colon]
+		minutesPart = s[colon+1:]
+	}
+	hours, err := strconv.Atoi(hoursPart)
+	if err != nil {
+		return nil
+	}
+	minutes, err := strconv.Atoi(minutesPart)
+	if err != nil {
+		return nil
+	}
+
+	offsetSeconds := sign * (hours*3600 + minutes*60)
+	if !OffsetSecondsArePlausible(offsetSeconds) {
+		return nil
+	}
+	return time.FixedZone(name, offsetSeconds)
 }
 
 func BuildOffsetValues(offsetSeconds int) (string, int, bool) {

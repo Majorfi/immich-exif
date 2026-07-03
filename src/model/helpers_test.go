@@ -50,3 +50,26 @@ func TestTruncateFilename(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizeForTerminal(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "plain text untouched", input: "photo.jpg (1)", want: "photo.jpg (1)"},
+		{name: "ansi escape stripped", input: "\x1b[2Jspoofed", want: "[2Jspoofed"},
+		{name: "carriage return stripped", input: "line\rredraw", want: "lineredraw"},
+		{name: "bell and del stripped", input: "a\x07b\x7fc", want: "abc"},
+		{name: "c1 csi and osc stripped", input: "a\u009b2J\u009dbc", want: "a2Jbc"},
+		{name: "newline and tab flattened", input: "a\n\tb", want: "a  b"},
+		{name: "accents preserved", input: "photo-été.jpg", want: "photo-été.jpg"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SanitizeForTerminal(tc.input); got != tc.want {
+				t.Fatalf("SanitizeForTerminal(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}

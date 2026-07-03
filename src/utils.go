@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/majorfi/immich-exif/api"
@@ -77,20 +78,11 @@ func resolveExportDir(cfg *model.Config) string {
 func addAlbumAssetMappings(exportAlbumIDsByAsset map[string][]string, assetIDs []string, albumID string) {
 	for _, assetID := range assetIDs {
 		existingAlbumIDs := exportAlbumIDsByAsset[assetID]
-		if containsString(existingAlbumIDs, albumID) {
+		if slices.Contains(existingAlbumIDs, albumID) {
 			continue
 		}
 		exportAlbumIDsByAsset[assetID] = append(existingAlbumIDs, albumID)
 	}
-}
-
-func containsString(values []string, expected string) bool {
-	for _, value := range values {
-		if value == expected {
-			return true
-		}
-	}
-	return false
 }
 
 func addNoAlbumAssetMappings(exportAlbumIDsByAsset map[string][]string, assetIDs []string) {
@@ -179,13 +171,14 @@ func printUnresolvedDuplicateHint(results []model.ProcessResult) {
 
 	fmt.Printf("\nSkipped duplicate uploads (%d):\n", len(unresolved))
 	for _, result := range unresolved {
-		fmt.Printf("  %s -> %s\n", result.AssetID, result.DuplicateID)
+		// Both IDs come from server responses; sanitize before printing.
+		fmt.Printf("  %s -> %s\n", model.SanitizeForTerminal(result.AssetID), model.SanitizeForTerminal(result.DuplicateID))
 	}
 
 	command := buildResolveDuplicateCommand(results)
 	if command != "" {
 		fmt.Println("\nTo patch them automatically, rerun with the same auth flags or environment and:")
-		fmt.Printf("  %s\n", command)
+		fmt.Printf("  %s\n", model.SanitizeForTerminal(command))
 	}
 }
 

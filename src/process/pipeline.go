@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/majorfi/immich-exif/api"
@@ -13,7 +14,9 @@ import (
 	"github.com/majorfi/immich-exif/model"
 )
 
-func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config, assetID string, index, total int, emitter model.EventEmitter) model.ProcessResult {
+var sleepFn = time.Sleep
+
+func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config, assetID string, index, total int, emitter model.EventEmitter, cancelled func() bool) model.ProcessResult {
 	fail := func(msg string, args ...any) model.ProcessResult {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusFailed, Message: fmt.Sprintf("[%s] %s", model.ShortID(assetID), fmt.Sprintf(msg, args...))}
 	}
@@ -22,11 +25,20 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	if err != nil {
 		return fail("fetch asset: %v", err)
 	}
+	if asset.IsTrashed {
+		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset is in the Immich trash; restore it before processing"}
+	}
+	if model.IsLivePhotoMotionCandidate(*asset) {
+		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "hidden video (likely a live-photo motion part); replacing it would sever the pair"}
+	}
 	if model.IsUnsupportedVideoAsset(*asset) {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "unsupported video container for metadata embedding"}
 	}
 	if len(exif.CollectExifArgs(exif.CompareAssetMetadata(*asset, nil))) == 0 {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "no metadata to embed"}
+	}
+	if strings.TrimSpace(asset.Checksum) == "" {
+		return fail("server returned no checksum for this asset; refusing to replace without integrity verification")
 	}
 
 	assetDir, err := os.MkdirTemp(cfg.TmpDir, assetID+"-*")
@@ -108,6 +120,17 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSuccess, Message: fmt.Sprintf("exported to %s", destPath)}
 	}
 
+	// Metadata edited server-side while we were downloading and rewriting the
+	// file would be silently overwritten by the replacement; skip instead so a
+	// re-run picks up the fresh state.
+	fresh, err := client.GetAsset(assetID)
+	if err != nil {
+		return fail("re-check asset before upload: %v", err)
+	}
+	if !fresh.UpdatedAt.Equal(asset.UpdatedAt) {
+		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset changed on the server while processing; re-run to pick up the latest metadata"}
+	}
+
 	var uploadOutcome UploadOutcome
 	var uploadErr error
 	maxRetries := 3
@@ -123,12 +146,18 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 			break
 		}
 		if attempt < maxRetries {
+			if cancelled != nil && cancelled() {
+				return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "user cancelled", Cancelled: true}
+			}
 			emitter.EmitProgress(model.ProgressEvent{
 				AssetID:  assetID,
 				Filename: asset.OriginalFileName,
 				Step:     fmt.Sprintf("Upload failed (attempt %d/%d), retrying in 2s: %v", attempt, maxRetries, uploadErr),
 			})
-			time.Sleep(2 * time.Second)
+			sleepFn(2 * time.Second)
+			if cancelled != nil && cancelled() {
+				return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "user cancelled", Cancelled: true}
+			}
 		}
 	}
 	if uploadErr != nil {

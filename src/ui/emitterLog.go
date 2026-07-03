@@ -26,11 +26,11 @@ func (e *LogEmitter) EmitProgress(event model.ProgressEvent) {
 	defer e.mu.Unlock()
 
 	if event.Filename != "" && (event.AssetID != e.lastAssetID || event.Filename != e.lastFilename) {
-		fmt.Printf("%s %s | %s\n", dim("=>"), model.ShortID(event.AssetID), model.TruncateFilename(event.Filename, 60))
+		fmt.Printf("%s %s | %s\n", dim("=>"), model.ShortID(event.AssetID), model.SanitizeForTerminal(model.TruncateFilename(event.Filename, 60)))
 		e.lastAssetID = event.AssetID
 		e.lastFilename = event.Filename
 	}
-	fmt.Printf("%s\n", dim(event.Step))
+	fmt.Printf("%s\n", dim(model.SanitizeForTerminal(event.Step)))
 }
 
 func (e *LogEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
@@ -47,10 +47,12 @@ func (e *LogEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
 	}
 	e.rememberAsset(event.AssetID, event.Filename)
 
-	fmt.Printf("[%d/%d] %d EXIF mismatch found for %s:\n", event.Index, event.Total, len(event.Entries), model.TruncateFilename(event.Filename, 60))
+	fmt.Printf("[%d/%d] %d EXIF mismatch found for %s:\n", event.Index, event.Total, len(event.Entries), model.SanitizeForTerminal(model.TruncateFilename(event.Filename, 60)))
 	for _, d := range event.Entries {
-		oldArrow := dim(fmt.Sprintf("%-20s ->", d.Old))
-		fmt.Printf("    %s %-22s %s %s\n", diffSymbol(string(d.Symbol)), d.Tag, oldArrow, d.New)
+		// Old/New carry server- and file-derived values; sanitize them so they
+		// cannot inject escape sequences that redraw or spoof the prompt below.
+		oldArrow := dim(fmt.Sprintf("%-20s ->", model.SanitizeForTerminal(d.Old)))
+		fmt.Printf("    %s %-22s %s %s\n", diffSymbol(string(d.Symbol)), d.Tag, oldArrow, model.SanitizeForTerminal(d.New))
 	}
 	if e.AutoConfirm {
 		fmt.Println()
@@ -105,7 +107,7 @@ func (e *LogEmitter) EmitAllDone(event model.AllDoneEvent) {
 		fmt.Println("\n" + red("Failed assets:"))
 		for _, r := range event.Results {
 			if r.Status == model.StatusFailed {
-				fmt.Printf("  %s: %s\n", red(model.ShortID(r.AssetID)), r.Message)
+				fmt.Printf("  %s: %s\n", red(model.ShortID(r.AssetID)), model.SanitizeForTerminal(r.Message))
 			}
 		}
 	}
