@@ -329,7 +329,7 @@ export default function Home() {
               >
                 exiftool
               </a>
-              , so the photo is self-describing, anywhere it travels.
+              , so the photo is self-describing, no server required.
             </p>
             <ul className="mt-6 space-y-3 text-[14px] text-fog">
               {[
