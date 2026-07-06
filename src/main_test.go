@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/majorfi/immich-exif/api"
 	"github.com/majorfi/immich-exif/exif"
@@ -941,6 +942,67 @@ func TestSetupTmpDirCreatesUniqueDirectoryInWorkingDir(t *testing.T) {
 	}
 	if string(oldFileContent) != "old" {
 		t.Fatalf("unexpected previous tmp content: %q", string(oldFileContent))
+	}
+}
+
+func TestSetupTmpDirSweepsStaleTmpDirs(t *testing.T) {
+	workingDir := t.TempDir()
+	t.Chdir(workingDir)
+
+	staleAge := time.Now().Add(-2 * staleTmpDirMaxAge)
+
+	staleDir := filepath.Join(workingDir, ".immich-exif-tmp-1111111111")
+	if err := os.MkdirAll(filepath.Join(staleDir, "asset-1"), 0o700); err != nil {
+		t.Fatalf("create stale tmp dir: %v", err)
+	}
+	leftoverFilePath := filepath.Join(staleDir, "asset-1", "video.mp4")
+	if err := os.WriteFile(leftoverFilePath, []byte("leftover"), 0o600); err != nil {
+		t.Fatalf("create leftover file: %v", err)
+	}
+	if err := os.Chtimes(staleDir, staleAge, staleAge); err != nil {
+		t.Fatalf("backdate stale tmp dir: %v", err)
+	}
+
+	freshDir := filepath.Join(workingDir, ".immich-exif-tmp-2222222222")
+	if err := os.Mkdir(freshDir, 0o700); err != nil {
+		t.Fatalf("create fresh tmp dir: %v", err)
+	}
+
+	legacyDir := filepath.Join(workingDir, ".immich-exif-tmp")
+	if err := os.Mkdir(legacyDir, 0o755); err != nil {
+		t.Fatalf("create legacy tmp dir: %v", err)
+	}
+	if err := os.Chtimes(legacyDir, staleAge, staleAge); err != nil {
+		t.Fatalf("backdate legacy tmp dir: %v", err)
+	}
+
+	prefixNamedFilePath := filepath.Join(workingDir, ".immich-exif-tmp-notes.txt")
+	if err := os.WriteFile(prefixNamedFilePath, []byte("keep"), 0o600); err != nil {
+		t.Fatalf("create prefix-named file: %v", err)
+	}
+	if err := os.Chtimes(prefixNamedFilePath, staleAge, staleAge); err != nil {
+		t.Fatalf("backdate prefix-named file: %v", err)
+	}
+
+	tmpDir, err := setupTmpDir()
+	if err != nil {
+		t.Fatalf("setup tmp dir: %v", err)
+	}
+	if _, err := os.Stat(tmpDir); err != nil {
+		t.Fatalf("expected new tmp dir to exist: %v", err)
+	}
+
+	if _, err := os.Stat(staleDir); !os.IsNotExist(err) {
+		t.Fatalf("expected stale tmp dir to be removed, stat err=%v", err)
+	}
+	if _, err := os.Stat(freshDir); err != nil {
+		t.Fatalf("expected fresh tmp dir to survive: %v", err)
+	}
+	if _, err := os.Stat(legacyDir); err != nil {
+		t.Fatalf("expected legacy tmp dir to survive: %v", err)
+	}
+	if _, err := os.Stat(prefixNamedFilePath); err != nil {
+		t.Fatalf("expected prefix-named file to survive: %v", err)
 	}
 }
 
