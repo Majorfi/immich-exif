@@ -55,6 +55,39 @@ func TestTruncateFilename(t *testing.T) {
 	}
 }
 
+func TestEmitDiffAlignsColumnsAcrossLongTagsAndValues(t *testing.T) {
+	emitter := &LogEmitter{AutoConfirm: true}
+	output := captureStdout(func() {
+		emitter.EmitDiff(model.DiffEvent{AssetID: "a1", Index: 10, Total: 12, Filename: "a.jpg",
+			Entries: []model.DiffEntry{
+				{Symbol: model.DiffAdd, Tag: "City", Old: "(none)", New: "Rennes"},
+				{Symbol: model.DiffAdd, Tag: "XMP-exif:DateTimeOriginal", Old: "(none)", New: "2026-04-02T13:13:17.901+02:00"},
+				{Symbol: model.DiffChange, Tag: "CreateDate", Old: "2026-04-02T11:13:17.901+02:00", New: "2026-04-02T13:13:17.901+02:00"},
+			}})
+	})
+
+	rows := strings.Split(strings.TrimRight(output, "\n"), "\n")[1:]
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 diff rows, got: %q", output)
+	}
+	arrowAt := strings.Index(rows[0], "->")
+	oldAt := strings.Index(rows[0], "(none)")
+	if arrowAt == -1 || oldAt == -1 {
+		t.Fatalf("expected an old value and arrow on the first row, got: %q", rows[0])
+	}
+	for _, row := range rows[1:] {
+		if strings.Index(row, "->") != arrowAt {
+			t.Fatalf("expected every arrow at column %d, got rows:\n%q", arrowAt, rows)
+		}
+	}
+	if strings.Index(rows[1], "(none)") != oldAt {
+		t.Fatalf("expected old values at column %d despite the longer tag, got rows:\n%q", oldAt, rows)
+	}
+	if strings.Index(rows[2], "2026-04-02T11") != oldAt {
+		t.Fatalf("expected the changed old value at column %d, got rows:\n%q", oldAt, rows)
+	}
+}
+
 func TestEmitDiffAutoConfirmReturnsConfirm(t *testing.T) {
 	emitter := &LogEmitter{AutoConfirm: true}
 	action := emitter.EmitDiff(model.DiffEvent{
@@ -160,6 +193,188 @@ func TestEmitProgressGroupsConsecutiveStepsForSameAsset(t *testing.T) {
 	}
 	if !strings.Contains(output, "Upload rejected. Reason: duplicate") {
 		t.Fatalf("expected duplicate rejection step, got output: %s", output)
+	}
+}
+
+func withFakeTerminal(t *testing.T) {
+	t.Helper()
+	orig := isTerminalFn
+	isTerminalFn = func() bool { return true }
+	t.Cleanup(func() { isTerminalFn = orig })
+	t.Setenv("NO_COLOR", "1")
+}
+
+func TestEmitProgressCounterFallsBackToLinesWhenPiped(t *testing.T) {
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{
+			AssetID: "abcdefghij",
+			Index:   3,
+			Total:   10,
+			Step:    "Scanning photo.jpg...",
+		})
+	})
+	if output != "[3/10] Scanning photo.jpg...\n" {
+		t.Fatalf("expected one counter line per step when piped, got: %q", output)
+	}
+}
+
+func TestEmitProgressCounterDropsPercentUpdatesWhenPiped(t *testing.T) {
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Step: "Downloading a.mp4..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Percent: 42, Step: "Downloading a.mp4..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Percent: 100, Step: "Downloading a.mp4..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Step: "Analyzing a.mp4..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Done: true})
+	})
+	want := "[1/2] Downloading a.mp4...\n[1/2] Analyzing a.mp4...\n"
+	if output != want {
+		t.Fatalf("expected percent-only and done updates to be dropped when piped, got: %q", output)
+	}
+}
+
+func TestEmitProgressCounterShowsStepPercentOnTerminal(t *testing.T) {
+	withFakeTerminal(t)
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 12, Percent: 45, Step: "Downloading a.mp4..."})
+	})
+	if output != "[1/12] Downloading a.mp4... 45%\n" {
+		t.Fatalf("expected the step percentage on the counter line, got: %q", output)
+	}
+}
+
+func TestLiveRegionShowsOneLinePerInFlightAsset(t *testing.T) {
+	withFakeTerminal(t)
+	emitter := &LogEmitter{AutoConfirm: true}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 12, Step: "Downloading a.mp4..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a2", Index: 2, Total: 12, Step: "Scanning b.jpg..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 12, Percent: 50, Step: "Downloading a.mp4..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 12, Done: true})
+	})
+	want := "[1/12] Downloading a.mp4...\n" +
+		"\x1b[1A\x1b[J[1/12] Downloading a.mp4...\n[2/12] Scanning b.jpg...\n" +
+		"\x1b[2A\x1b[J[1/12] Downloading a.mp4... 50%\n[2/12] Scanning b.jpg...\n" +
+		"\x1b[2A\x1b[J[2/12] Scanning b.jpg...\n"
+	if output != want {
+		t.Fatalf("expected one region line per in-flight asset, got: %q", output)
+	}
+}
+
+func TestLiveRegionTruncatesToTerminalWidth(t *testing.T) {
+	withFakeTerminal(t)
+	origWidth := terminalWidthFn
+	terminalWidthFn = func() int { return 20 }
+	t.Cleanup(func() { terminalWidthFn = origWidth })
+
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Step: "Scanning a-very-long-filename.jpg..."})
+	})
+	if output != "[1/2] Scanning a-ve\n" {
+		t.Fatalf("expected the region line to be cut below the terminal width, got: %q", output)
+	}
+}
+
+func TestEmitProgressCounterRewritesInPlaceOnTerminal(t *testing.T) {
+	withFakeTerminal(t)
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Step: "Scanning a.jpg..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Step: "Downloading a.jpg..."})
+	})
+	want := "[1/2] Scanning a.jpg...\n\x1b[1A\x1b[J[1/2] Downloading a.jpg...\n"
+	if output != want {
+		t.Fatalf("expected in-place region rewrites, got: %q", output)
+	}
+}
+
+func TestEmitDiffClearsPendingCounterLine(t *testing.T) {
+	withFakeTerminal(t)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create pipe: %v", err)
+	}
+	defer r.Close()
+	defer w.Close()
+	oldStdin := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = oldStdin }()
+
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 1, Step: "Scanning a.jpg..."})
+		emitter.EmitDiff(model.DiffEvent{AssetID: "a1", Index: 1, Total: 1, Filename: "a.jpg",
+			Entries: []model.DiffEntry{{Symbol: model.DiffAdd, Tag: "Make", Old: "(none)", New: "Canon"}}})
+	})
+	if !strings.Contains(output, "Scanning a.jpg...\n\x1b[1A\x1b[J[1/1]") {
+		t.Fatalf("expected the live region to be erased right before the diff block, got: %q", output)
+	}
+}
+
+func TestEmitProgressStepAfterCounterClearsCounterLine(t *testing.T) {
+	withFakeTerminal(t)
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 3, Step: "Scanning a.jpg..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Filename: "a.jpg", Step: "Uploading new asset..."})
+	})
+	want := "[1/3] Scanning a.jpg...\n\x1b[1A\x1b[J=> a1 | a.jpg\nUploading new asset...\n"
+	if output != want {
+		t.Fatalf("expected the live region to be erased before the upload step, got: %q", output)
+	}
+}
+
+func TestEmitAllDoneClearsPendingCounterLine(t *testing.T) {
+	withFakeTerminal(t)
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 1, Step: "Scanning a.jpg..."})
+		emitter.EmitAllDone(model.AllDoneEvent{Results: []model.ProcessResult{{Status: model.StatusSuccess}}})
+	})
+	if !strings.Contains(output, "Scanning a.jpg...\n\x1b[1A\x1b[J\nDone:") {
+		t.Fatalf("expected the live region to be erased before the summary, got: %q", output)
+	}
+}
+
+func TestAutoConfirmShowsLiveCounterOnTerminal(t *testing.T) {
+	withFakeTerminal(t)
+	emitter := &LogEmitter{AutoConfirm: true}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 12, Percent: 45, Step: "Downloading a.mp4..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Filename: "a.mp4", Step: "Uploading new asset..."})
+		emitter.EmitDiff(model.DiffEvent{AssetID: "a1", Index: 1, Total: 12, Filename: "a.mp4",
+			Entries: []model.DiffEntry{{Symbol: model.DiffAdd, Tag: "Make", Old: "(none)", New: "Canon"}}})
+	})
+	if !strings.HasPrefix(output, "[1/12] Downloading a.mp4... 45%\n") {
+		t.Fatalf("expected the live counter under -y on a terminal, got: %q", output)
+	}
+	if strings.Contains(output, "Uploading new asset") {
+		t.Fatalf("expected upload steps to stay suppressed under -y, got: %q", output)
+	}
+	if !strings.Contains(output, "45%\n\x1b[1A\x1b[J[1/12] 1 EXIF mismatch") {
+		t.Fatalf("expected the live region to be erased right before the diff block, got: %q", output)
+	}
+}
+
+func TestAutoConfirmPipedOutputStaysDiffOnly(t *testing.T) {
+	emitter := &LogEmitter{AutoConfirm: true}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Step: "Scanning a.jpg..."})
+		emitter.EmitDiff(model.DiffEvent{AssetID: "a1", Index: 1, Total: 2, Filename: "a.jpg",
+			Entries: []model.DiffEntry{{Symbol: model.DiffAdd, Tag: "Make", Old: "(none)", New: "Canon"}}})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a2", Index: 2, Total: 2, Step: "Scanning b.jpg..."})
+		emitter.EmitDiff(model.DiffEvent{AssetID: "a2", Index: 2, Total: 2, Filename: "b.jpg",
+			Entries: []model.DiffEntry{{Symbol: model.DiffAdd, Tag: "Make", Old: "(none)", New: "Nikon"}}})
+	})
+	if strings.Contains(output, "Scanning") {
+		t.Fatalf("expected scan progress to be suppressed under -y, got:\n%q", output)
+	}
+	if !strings.Contains(output, "\n\n\n[2/2]") {
+		t.Fatalf("expected diff separator spacing to be unchanged under -y, got:\n%q", output)
 	}
 }
 

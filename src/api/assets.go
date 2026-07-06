@@ -30,7 +30,29 @@ func (c *ImmichClient) GetAsset(assetID string) (*model.AssetResponse, error) {
 	return &asset, nil
 }
 
-func (c *ImmichClient) DownloadAsset(assetID, destPath, expectedChecksum string) (err error) {
+// downloadProgressWriter reports the integer transfer percentage each time it
+// increases, so a callback fires at most 100 times per download.
+type downloadProgressWriter struct {
+	total       int64
+	written     int64
+	lastPercent int
+	onProgress  func(percent int)
+}
+
+func (w *downloadProgressWriter) Write(b []byte) (int, error) {
+	w.written += int64(len(b))
+	percent := int(w.written * 100 / w.total)
+	if percent > 100 {
+		percent = 100
+	}
+	if percent > w.lastPercent {
+		w.lastPercent = percent
+		w.onProgress(percent)
+	}
+	return len(b), nil
+}
+
+func (c *ImmichClient) DownloadAsset(assetID, destPath, expectedChecksum string, onProgress func(percent int)) (err error) {
 	req, err := c.newRequest(http.MethodGet, "/assets/"+url.PathEscape(assetID)+"/original", nil)
 	if err != nil {
 		return err
@@ -60,7 +82,11 @@ func (c *ImmichClient) DownloadAsset(assetID, destPath, expectedChecksum string)
 	}()
 
 	hasher := sha1.New()
-	written, err := io.Copy(io.MultiWriter(f, hasher), watchdogReader{reader: resp.Body, watchdog: watchdog})
+	dest := io.MultiWriter(f, hasher)
+	if onProgress != nil && resp.ContentLength > 0 {
+		dest = io.MultiWriter(f, hasher, &downloadProgressWriter{total: resp.ContentLength, onProgress: onProgress})
+	}
+	written, err := io.Copy(dest, watchdogReader{reader: resp.Body, watchdog: watchdog})
 	if err != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("download stalled: no progress for %v", stallTimeout)

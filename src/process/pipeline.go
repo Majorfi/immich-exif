@@ -25,6 +25,21 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	if err != nil {
 		return fail("fetch asset: %v", err)
 	}
+	// Filename stays empty: with it set, LogEmitter would print an extra
+	// "=> id | file" header and update its asset-grouping state, which drives
+	// the blank-line separators between diff blocks.
+	displayName := model.TruncateFilename(asset.OriginalFileName, 60)
+	stepProgress := func(step string, percent int) {
+		emitter.EmitProgress(model.ProgressEvent{
+			AssetID: assetID,
+			Index:   index,
+			Total:   total,
+			Percent: percent,
+			Step:    step,
+		})
+	}
+	stepProgress("Scanning "+displayName+"...", 0)
+	defer emitter.EmitProgress(model.ProgressEvent{AssetID: assetID, Index: index, Total: total, Done: true})
 	if asset.IsTrashed {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset is in the Immich trash; restore it before processing"}
 	}
@@ -52,10 +67,14 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 		return fail("%v", err)
 	}
 	filePath := filepath.Join(assetDir, safeName)
-	if err := client.DownloadAsset(assetID, filePath, asset.Checksum); err != nil {
+	stepProgress("Downloading "+displayName+"...", 0)
+	if err := client.DownloadAsset(assetID, filePath, asset.Checksum, func(percent int) {
+		stepProgress("Downloading "+displayName+"...", percent)
+	}); err != nil {
 		return fail("download: %v", err)
 	}
 
+	stepProgress("Analyzing "+displayName+"...", 0)
 	var existing exif.ExifTagMap
 	existing, err = exif.ReadExifTagsFn(filePath)
 	if err != nil {
@@ -84,6 +103,7 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusFailed, Message: "user cancelled", Cancelled: true}
 	}
 
+	stepProgress("Writing tags to "+displayName+"...", 0)
 	if err := exif.WriteExifTagsFn(filePath, exifArgs); err != nil {
 		return fail("write exif: %v", err)
 	}
