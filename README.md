@@ -207,9 +207,10 @@ immich-exif -y -force -all
 
 ## Output
 
-Console output with interactive single-keypress prompts. Each asset shows a diff and waits for input:
+Console output with interactive single-keypress prompts. Each asset first prints a one-line `[i/total] Scanning <file>...` marker as it is fetched and inspected (skipped assets stay visible too), then shows a diff and waits for input:
 
 ```
+[1/5] Scanning IMG_1234.jpg...
 [1/5] 2 EXIF mismatch found for IMG_1234.jpg:
     + OffsetTimeOriginal    (none)               -> +01:00
     ~ Rating                3                    -> 5
@@ -218,7 +219,7 @@ Console output with interactive single-keypress prompts. Each asset shows a diff
 ```
 
 No Enter key needed. Use `-y` to auto-confirm.
-Interactive mode forces single-worker to avoid mixed prompts; parallel workers apply when using `-y`. Under `-y` each asset prints only its diff block (the per-step upload progress is omitted), and each block prints atomically, so multiple workers never interleave their output. Final outcomes and any failures are reported in the closing summary.
+Interactive mode forces single-worker to avoid mixed prompts; parallel workers apply when using `-y`. Under `-y` each asset prints only its diff block (the scanning line and per-step upload progress are omitted), and each block prints atomically, so multiple workers never interleave their output. Final outcomes and any failures are reported in the closing summary.
 
 Output is colorized when stdout is a terminal (added tags in green, changed tags in amber, failures in red). Colors are disabled automatically when the output is piped or redirected, and when `NO_COLOR` is set.
 

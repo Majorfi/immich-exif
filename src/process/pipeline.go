@@ -25,6 +25,13 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	if err != nil {
 		return fail("fetch asset: %v", err)
 	}
+	// Filename stays empty: with it set, LogEmitter would print an extra
+	// "=> id | file" header and update its asset-grouping state, which drives
+	// the blank-line separators between diff blocks.
+	emitter.EmitProgress(model.ProgressEvent{
+		AssetID: assetID,
+		Step:    fmt.Sprintf("[%d/%d] Scanning %s...", index, total, model.TruncateFilename(asset.OriginalFileName, 60)),
+	})
 	if asset.IsTrashed {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset is in the Immich trash; restore it before processing"}
 	}

@@ -163,6 +163,37 @@ func TestEmitProgressGroupsConsecutiveStepsForSameAsset(t *testing.T) {
 	}
 }
 
+func TestEmitProgressScanLineRendersAsSingleLine(t *testing.T) {
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{
+			AssetID: "abcdefghij",
+			Step:    "[3/10] Scanning photo.jpg...",
+		})
+	})
+	if output != "[3/10] Scanning photo.jpg...\n" {
+		t.Fatalf("expected a single scan line without header, got: %q", output)
+	}
+}
+
+func TestScanProgressKeepsAutoConfirmOutputDiffOnly(t *testing.T) {
+	emitter := &LogEmitter{AutoConfirm: true}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Step: "[1/2] Scanning a.jpg..."})
+		emitter.EmitDiff(model.DiffEvent{AssetID: "a1", Index: 1, Total: 2, Filename: "a.jpg",
+			Entries: []model.DiffEntry{{Symbol: model.DiffAdd, Tag: "Make", Old: "(none)", New: "Canon"}}})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a2", Step: "[2/2] Scanning b.jpg..."})
+		emitter.EmitDiff(model.DiffEvent{AssetID: "a2", Index: 2, Total: 2, Filename: "b.jpg",
+			Entries: []model.DiffEntry{{Symbol: model.DiffAdd, Tag: "Make", Old: "(none)", New: "Nikon"}}})
+	})
+	if strings.Contains(output, "Scanning") {
+		t.Fatalf("expected scan progress to be suppressed under -y, got:\n%q", output)
+	}
+	if !strings.Contains(output, "\n\n\n[2/2]") {
+		t.Fatalf("expected diff separator spacing to be unchanged under -y, got:\n%q", output)
+	}
+}
+
 func TestEmitProgressSuppressedInAutoConfirm(t *testing.T) {
 	emitter := &LogEmitter{AutoConfirm: true}
 	output := captureStdout(func() {
