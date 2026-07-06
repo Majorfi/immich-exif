@@ -224,7 +224,7 @@ Each asset with changes then shows a diff and waits for input (the counter line 
 ```
 
 No Enter key needed. Use `-y` to auto-confirm. When output is piped or redirected, the counter prints one line per step instead of updating in place, and percent-only updates are omitted.
-Interactive mode forces single-worker to avoid mixed prompts; parallel workers apply when using `-y`. Under `-y` on a terminal, the live counter still shows between diff blocks (with several workers it alternates between the files in flight); the per-step upload logs stay omitted. When `-y` output is piped or redirected, each asset prints only its diff block, and each block prints atomically, so multiple workers never interleave their output. Final outcomes and any failures are reported in the closing summary.
+Interactive mode forces single-worker to avoid mixed prompts; parallel workers apply when using `-y`. Under `-y` on a terminal, the live counter still shows between diff blocks — one line per file in flight when running several workers; the per-step upload logs stay omitted. When `-y` output is piped or redirected, each asset prints only its diff block, and each block prints atomically, so multiple workers never interleave their output. Final outcomes and any failures are reported in the closing summary.
 
 Output is colorized when stdout is a terminal (added tags in green, changed tags in amber, failures in red). Colors are disabled automatically when the output is piped or redirected, and when `NO_COLOR` is set.
 

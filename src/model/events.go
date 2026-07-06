@@ -10,7 +10,10 @@ type ProgressEvent struct {
 	// Percent is the progress of the current step (e.g. download transfer),
 	// not of the batch; 0 means no percentage is shown.
 	Percent int
-	Step    string
+	// Done marks the end of this asset's processing so the emitter can retire
+	// its live counter line.
+	Done bool
+	Step string
 }
 
 type DiffSymbol string

@@ -20,6 +20,10 @@ type recordingEmitter struct {
 
 func (e *recordingEmitter) EmitProgress(event model.ProgressEvent) {
 	e.progress = append(e.progress, event)
+	if event.Done {
+		e.sequence = append(e.sequence, "done")
+		return
+	}
 	e.sequence = append(e.sequence, "progress:"+event.Step)
 }
 
@@ -66,6 +70,9 @@ func TestProcessAssetEmitsStepProgress(t *testing.T) {
 	if !slices.Contains(emitter.sequence[diffAt:], "progress:Writing tags to photo.jpg...") {
 		t.Fatalf("expected a writing-tags step after the diff, got: %v", emitter.sequence[diffAt:])
 	}
+	if emitter.sequence[len(emitter.sequence)-1] != "done" {
+		t.Fatalf("expected a final done event retiring the counter line, got: %v", emitter.sequence)
+	}
 
 	first := emitter.progress[0]
 	if first.Index != 2 || first.Total != 5 {
@@ -108,12 +115,15 @@ func TestProcessAssetEmitsScanProgressForSkippedAsset(t *testing.T) {
 		t.Fatalf("expected skipped, got %s", result.Status)
 	}
 
-	if len(emitter.progress) != 1 {
-		t.Fatalf("expected exactly one scan progress event, got %d", len(emitter.progress))
+	if len(emitter.progress) != 2 {
+		t.Fatalf("expected a scan event and a done event, got %d: %v", len(emitter.progress), emitter.sequence)
 	}
 	scan := emitter.progress[0]
 	if scan.Step != "Scanning photo.jpg..." || scan.Index != 3 || scan.Total != 4 {
 		t.Fatalf("unexpected scan event: step=%q position=%d/%d", scan.Step, scan.Index, scan.Total)
+	}
+	if !emitter.progress[1].Done {
+		t.Fatalf("expected the skip path to retire its counter line with a done event, got: %+v", emitter.progress[1])
 	}
 }
 

@@ -16,8 +16,10 @@ type LogEmitter struct {
 	mu           sync.Mutex
 	lastAssetID  string
 	lastFilename string
-	transient    bool
 	lastCounter  string
+	liveOrder    []string
+	liveLines    map[string]string
+	drawnRows    int
 }
 
 func (e *LogEmitter) EmitProgress(event model.ProgressEvent) {
@@ -37,7 +39,7 @@ func (e *LogEmitter) EmitProgress(event model.ProgressEvent) {
 	if e.AutoConfirm {
 		return
 	}
-	e.clearTransientLocked()
+	e.clearLiveLocked()
 	if event.Filename != "" && (event.AssetID != e.lastAssetID || event.Filename != e.lastFilename) {
 		fmt.Printf("%s %s | %s\n", dim("=>"), model.ShortID(event.AssetID), model.SanitizeForTerminal(model.TruncateFilename(event.Filename, 60)))
 		e.lastAssetID = event.AssetID
@@ -46,18 +48,29 @@ func (e *LogEmitter) EmitProgress(event model.ProgressEvent) {
 	fmt.Printf("%s\n", dim(model.SanitizeForTerminal(event.Step)))
 }
 
+var terminalWidthFn = func() int {
+	width, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil {
+		return 0
+	}
+	return width
+}
+
 func (e *LogEmitter) printCounterLocked(event model.ProgressEvent) {
-	line := fmt.Sprintf("[%d/%d] %s", event.Index, event.Total, model.SanitizeForTerminal(event.Step))
 	if isTerminalFn() {
-		if event.Percent > 0 {
-			line = fmt.Sprintf("%s %d%%", line, event.Percent)
+		if event.Done {
+			e.removeLiveLocked(event.AssetID)
+			return
 		}
-		fmt.Printf("\r\033[K%s", dim(line))
-		e.transient = true
+		e.upsertLiveLocked(event)
+		return
+	}
+	if event.Done {
 		return
 	}
 	// Piped output cannot be rewritten in place: print one line per step and
 	// drop percent-only updates, or a single download would emit 100 lines.
+	line := fmt.Sprintf("[%d/%d] %s", event.Index, event.Total, model.SanitizeForTerminal(event.Step))
 	if line == e.lastCounter {
 		return
 	}
@@ -65,20 +78,77 @@ func (e *LogEmitter) printCounterLocked(event model.ProgressEvent) {
 	fmt.Printf("%s\n", dim(line))
 }
 
-// clearTransientLocked erases the pending in-place counter line; it must run
-// before any other stdout write or the counter bleeds into that output.
-func (e *LogEmitter) clearTransientLocked() {
-	if !e.transient {
+// The live region holds one counter line per in-flight asset (several when
+// -y runs parallel workers) and is redrawn as a block: cursor up over the
+// rows drawn last time, erase to screen end, reprint.
+func (e *LogEmitter) upsertLiveLocked(event model.ProgressEvent) {
+	line := fmt.Sprintf("[%d/%d] %s", event.Index, event.Total, model.SanitizeForTerminal(event.Step))
+	if event.Percent > 0 {
+		line = fmt.Sprintf("%s %d%%", line, event.Percent)
+	}
+	if e.liveLines == nil {
+		e.liveLines = make(map[string]string)
+	}
+	if _, exists := e.liveLines[event.AssetID]; !exists {
+		e.liveOrder = append(e.liveOrder, event.AssetID)
+	}
+	e.liveLines[event.AssetID] = line
+	e.redrawLiveLocked()
+}
+
+func (e *LogEmitter) removeLiveLocked(assetID string) {
+	if _, exists := e.liveLines[assetID]; !exists {
 		return
 	}
-	fmt.Print("\r\033[K")
-	e.transient = false
+	delete(e.liveLines, assetID)
+	for i, id := range e.liveOrder {
+		if id == assetID {
+			e.liveOrder = append(e.liveOrder[:i], e.liveOrder[i+1:]...)
+			break
+		}
+	}
+	e.redrawLiveLocked()
+}
+
+func (e *LogEmitter) redrawLiveLocked() {
+	if e.drawnRows > 0 {
+		fmt.Printf("\033[%dA\033[J", e.drawnRows)
+	}
+	width := terminalWidthFn()
+	for _, id := range e.liveOrder {
+		fmt.Printf("%s\n", dim(fitToWidth(e.liveLines[id], width)))
+	}
+	e.drawnRows = len(e.liveOrder)
+}
+
+// clearLiveLocked erases the live region; it must run before any other stdout
+// write or the counter lines bleed into that output. The region content is
+// kept and repainted on the next counter event.
+func (e *LogEmitter) clearLiveLocked() {
+	if e.drawnRows == 0 {
+		return
+	}
+	fmt.Printf("\033[%dA\033[J", e.drawnRows)
+	e.drawnRows = 0
+}
+
+// fitToWidth keeps a live line from wrapping: a wrapped line occupies two
+// terminal rows and breaks the cursor-up arithmetic of the region redraw.
+func fitToWidth(line string, width int) string {
+	if width <= 1 {
+		return line
+	}
+	runes := []rune(line)
+	if len(runes) < width {
+		return line
+	}
+	return string(runes[:width-1])
 }
 
 func (e *LogEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.clearTransientLocked()
+	e.clearLiveLocked()
 
 	if len(event.Entries) == 0 {
 		e.rememberAsset(event.AssetID, event.Filename)
@@ -124,10 +194,12 @@ func (e *LogEmitter) rememberAsset(assetID, filename string) {
 
 func (e *LogEmitter) EmitAllDone(event model.AllDoneEvent) {
 	e.mu.Lock()
-	e.clearTransientLocked()
+	e.clearLiveLocked()
 	e.lastAssetID = ""
 	e.lastFilename = ""
 	e.lastCounter = ""
+	e.liveOrder = nil
+	e.liveLines = nil
 	e.mu.Unlock()
 
 	var succeeded, skipped, failed int

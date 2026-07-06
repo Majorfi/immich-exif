@@ -39,6 +39,7 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 		})
 	}
 	stepProgress("Scanning "+displayName+"...", 0)
+	defer emitter.EmitProgress(model.ProgressEvent{AssetID: assetID, Index: index, Total: total, Done: true})
 	if asset.IsTrashed {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset is in the Immich trash; restore it before processing"}
 	}
