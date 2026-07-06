@@ -163,26 +163,98 @@ func TestEmitProgressGroupsConsecutiveStepsForSameAsset(t *testing.T) {
 	}
 }
 
-func TestEmitProgressScanLineRendersAsSingleLine(t *testing.T) {
+func withFakeTerminal(t *testing.T) {
+	t.Helper()
+	orig := isTerminalFn
+	isTerminalFn = func() bool { return true }
+	t.Cleanup(func() { isTerminalFn = orig })
+	t.Setenv("NO_COLOR", "1")
+}
+
+func TestEmitProgressCounterFallsBackToLinesWhenPiped(t *testing.T) {
 	emitter := &LogEmitter{}
 	output := captureStdout(func() {
 		emitter.EmitProgress(model.ProgressEvent{
 			AssetID: "abcdefghij",
-			Step:    "[3/10] Scanning photo.jpg...",
+			Index:   3,
+			Total:   10,
+			Step:    "Scanning photo.jpg...",
 		})
 	})
-	if output != "[3/10] Scanning photo.jpg...\n" {
-		t.Fatalf("expected a single scan line without header, got: %q", output)
+	if output != "[3/10] 30% Scanning photo.jpg...\n" {
+		t.Fatalf("expected one counter line per asset when piped, got: %q", output)
+	}
+}
+
+func TestEmitProgressCounterRewritesInPlaceOnTerminal(t *testing.T) {
+	withFakeTerminal(t)
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Step: "Scanning a.jpg..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a2", Index: 2, Total: 2, Step: "Scanning b.jpg..."})
+	})
+	want := "\r\x1b[K[1/2] 50% Scanning a.jpg...\r\x1b[K[2/2] 100% Scanning b.jpg..."
+	if output != want {
+		t.Fatalf("expected in-place counter rewrites without newlines, got: %q", output)
+	}
+}
+
+func TestEmitDiffClearsPendingCounterLine(t *testing.T) {
+	withFakeTerminal(t)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create pipe: %v", err)
+	}
+	defer r.Close()
+	defer w.Close()
+	oldStdin := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = oldStdin }()
+
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 1, Step: "Scanning a.jpg..."})
+		emitter.EmitDiff(model.DiffEvent{AssetID: "a1", Index: 1, Total: 1, Filename: "a.jpg",
+			Entries: []model.DiffEntry{{Symbol: model.DiffAdd, Tag: "Make", Old: "(none)", New: "Canon"}}})
+	})
+	if !strings.Contains(output, "Scanning a.jpg...\r\x1b[K[1/1]") {
+		t.Fatalf("expected the counter line to be erased right before the diff block, got: %q", output)
+	}
+}
+
+func TestEmitProgressStepAfterCounterClearsCounterLine(t *testing.T) {
+	withFakeTerminal(t)
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 3, Step: "Scanning a.jpg..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Filename: "a.jpg", Step: "Uploading new asset..."})
+	})
+	want := "\r\x1b[K[1/3] 33% Scanning a.jpg...\r\x1b[K=> a1 | a.jpg\nUploading new asset...\n"
+	if output != want {
+		t.Fatalf("expected the counter line to be erased before the upload step, got: %q", output)
+	}
+}
+
+func TestEmitAllDoneClearsPendingCounterLine(t *testing.T) {
+	withFakeTerminal(t)
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 1, Step: "Scanning a.jpg..."})
+		emitter.EmitAllDone(model.AllDoneEvent{Results: []model.ProcessResult{{Status: model.StatusSuccess}}})
+	})
+	if !strings.Contains(output, "Scanning a.jpg...\r\x1b[K\nDone:") {
+		t.Fatalf("expected the counter line to be erased before the summary, got: %q", output)
 	}
 }
 
 func TestScanProgressKeepsAutoConfirmOutputDiffOnly(t *testing.T) {
 	emitter := &LogEmitter{AutoConfirm: true}
 	output := captureStdout(func() {
-		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Step: "[1/2] Scanning a.jpg..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Step: "Scanning a.jpg..."})
 		emitter.EmitDiff(model.DiffEvent{AssetID: "a1", Index: 1, Total: 2, Filename: "a.jpg",
 			Entries: []model.DiffEntry{{Symbol: model.DiffAdd, Tag: "Make", Old: "(none)", New: "Canon"}}})
-		emitter.EmitProgress(model.ProgressEvent{AssetID: "a2", Step: "[2/2] Scanning b.jpg..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a2", Index: 2, Total: 2, Step: "Scanning b.jpg..."})
 		emitter.EmitDiff(model.DiffEvent{AssetID: "a2", Index: 2, Total: 2, Filename: "b.jpg",
 			Entries: []model.DiffEntry{{Symbol: model.DiffAdd, Tag: "Make", Old: "(none)", New: "Nikon"}}})
 	})

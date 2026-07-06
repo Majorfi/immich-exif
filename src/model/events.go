@@ -3,7 +3,11 @@ package model
 type ProgressEvent struct {
 	AssetID  string
 	Filename string
-	Step     string
+	// Index/Total mark a countable batch position; when Total > 0 the emitter
+	// renders the event as a live "[i/total] p%" counter line.
+	Index int
+	Total int
+	Step  string
 }
 
 type DiffSymbol string

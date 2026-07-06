@@ -47,8 +47,11 @@ func TestProcessAssetEmitsScanProgressBeforeDiff(t *testing.T) {
 		t.Fatalf("expected scan progress before diff, got sequence: %v", emitter.sequence)
 	}
 	scan := emitter.progress[0]
-	if scan.Step != "[2/5] Scanning photo.jpg..." {
+	if scan.Step != "Scanning photo.jpg..." {
 		t.Fatalf("unexpected scan step: %q", scan.Step)
+	}
+	if scan.Index != 2 || scan.Total != 5 {
+		t.Fatalf("expected batch position 2/5, got %d/%d", scan.Index, scan.Total)
 	}
 	if scan.AssetID != "asset-1" {
 		t.Fatalf("expected asset ID on scan event, got %q", scan.AssetID)
@@ -80,8 +83,9 @@ func TestProcessAssetEmitsScanProgressForSkippedAsset(t *testing.T) {
 	if len(emitter.progress) != 1 {
 		t.Fatalf("expected exactly one scan progress event, got %d", len(emitter.progress))
 	}
-	if emitter.progress[0].Step != "[3/4] Scanning photo.jpg..." {
-		t.Fatalf("unexpected scan step: %q", emitter.progress[0].Step)
+	scan := emitter.progress[0]
+	if scan.Step != "Scanning photo.jpg..." || scan.Index != 3 || scan.Total != 4 {
+		t.Fatalf("unexpected scan event: step=%q position=%d/%d", scan.Step, scan.Index, scan.Total)
 	}
 }
 

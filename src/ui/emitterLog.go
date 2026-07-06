@@ -16,6 +16,7 @@ type LogEmitter struct {
 	mu           sync.Mutex
 	lastAssetID  string
 	lastFilename string
+	transient    bool
 }
 
 func (e *LogEmitter) EmitProgress(event model.ProgressEvent) {
@@ -25,6 +26,12 @@ func (e *LogEmitter) EmitProgress(event model.ProgressEvent) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	if event.Total > 0 {
+		e.printCounterLocked(event)
+		return
+	}
+
+	e.clearTransientLocked()
 	if event.Filename != "" && (event.AssetID != e.lastAssetID || event.Filename != e.lastFilename) {
 		fmt.Printf("%s %s | %s\n", dim("=>"), model.ShortID(event.AssetID), model.SanitizeForTerminal(model.TruncateFilename(event.Filename, 60)))
 		e.lastAssetID = event.AssetID
@@ -33,9 +40,30 @@ func (e *LogEmitter) EmitProgress(event model.ProgressEvent) {
 	fmt.Printf("%s\n", dim(model.SanitizeForTerminal(event.Step)))
 }
 
+func (e *LogEmitter) printCounterLocked(event model.ProgressEvent) {
+	line := fmt.Sprintf("[%d/%d] %d%% %s", event.Index, event.Total, event.Index*100/event.Total, model.SanitizeForTerminal(event.Step))
+	if isTerminalFn() {
+		fmt.Printf("\r\033[K%s", dim(line))
+		e.transient = true
+		return
+	}
+	fmt.Printf("%s\n", dim(line))
+}
+
+// clearTransientLocked erases the pending in-place counter line; it must run
+// before any other stdout write or the counter bleeds into that output.
+func (e *LogEmitter) clearTransientLocked() {
+	if !e.transient {
+		return
+	}
+	fmt.Print("\r\033[K")
+	e.transient = false
+}
+
 func (e *LogEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.clearTransientLocked()
 
 	if len(event.Entries) == 0 {
 		e.rememberAsset(event.AssetID, event.Filename)
@@ -81,6 +109,7 @@ func (e *LogEmitter) rememberAsset(assetID, filename string) {
 
 func (e *LogEmitter) EmitAllDone(event model.AllDoneEvent) {
 	e.mu.Lock()
+	e.clearTransientLocked()
 	e.lastAssetID = ""
 	e.lastFilename = ""
 	e.mu.Unlock()

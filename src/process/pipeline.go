@@ -30,7 +30,9 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	// the blank-line separators between diff blocks.
 	emitter.EmitProgress(model.ProgressEvent{
 		AssetID: assetID,
-		Step:    fmt.Sprintf("[%d/%d] Scanning %s...", index, total, model.TruncateFilename(asset.OriginalFileName, 60)),
+		Index:   index,
+		Total:   total,
+		Step:    fmt.Sprintf("Scanning %s...", model.TruncateFilename(asset.OriginalFileName, 60)),
 	})
 	if asset.IsTrashed {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset is in the Immich trash; restore it before processing"}
