@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -71,7 +73,7 @@ func TestDownloadAssetWritesFile(t *testing.T) {
 	c := NewImmichClient(server.URL, "test-key")
 	destPath := filepath.Join(t.TempDir(), "downloaded.jpg")
 
-	if err := c.DownloadAsset("asset-123", destPath, ""); err != nil {
+	if err := c.DownloadAsset("asset-123", destPath, "", nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -81,6 +83,38 @@ func TestDownloadAssetWritesFile(t *testing.T) {
 	}
 	if string(got) != content {
 		t.Fatalf("expected %q, got %q", content, string(got))
+	}
+}
+
+func TestDownloadAssetReportsProgress(t *testing.T) {
+	content := bytes.Repeat([]byte("x"), 200_000)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(len(content)))
+		_, _ = w.Write(content)
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "test-key")
+	destPath := filepath.Join(t.TempDir(), "downloaded.jpg")
+
+	var percents []int
+	err := c.DownloadAsset("asset-123", destPath, "", func(percent int) {
+		percents = append(percents, percent)
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(percents) == 0 {
+		t.Fatal("expected progress callbacks for a sized download")
+	}
+	for i := 1; i < len(percents); i++ {
+		if percents[i] <= percents[i-1] {
+			t.Fatalf("expected strictly increasing percentages, got %v", percents)
+		}
+	}
+	if percents[len(percents)-1] != 100 {
+		t.Fatalf("expected the final callback to report 100%%, got %v", percents)
 	}
 }
 
@@ -95,7 +129,7 @@ func TestDownloadAssetVerifiesChecksumMatch(t *testing.T) {
 	c := NewImmichClient(server.URL, "test-key")
 	destPath := filepath.Join(t.TempDir(), "downloaded.jpg")
 
-	if err := c.DownloadAsset("asset-123", destPath, base64.StdEncoding.EncodeToString(sum[:])); err != nil {
+	if err := c.DownloadAsset("asset-123", destPath, base64.StdEncoding.EncodeToString(sum[:]), nil); err != nil {
 		t.Fatalf("unexpected error for matching checksum: %v", err)
 	}
 }
@@ -110,7 +144,7 @@ func TestDownloadAssetRejectsChecksumMismatch(t *testing.T) {
 	c := NewImmichClient(server.URL, "test-key")
 	destPath := filepath.Join(t.TempDir(), "downloaded.jpg")
 
-	err := c.DownloadAsset("asset-123", destPath, base64.StdEncoding.EncodeToString(wrong[:]))
+	err := c.DownloadAsset("asset-123", destPath, base64.StdEncoding.EncodeToString(wrong[:]), nil)
 	if err == nil {
 		t.Fatal("expected error for checksum mismatch")
 	}
@@ -130,7 +164,7 @@ func TestDownloadAssetReturnsErrorOnFailure(t *testing.T) {
 
 	c := NewImmichClient(server.URL, "test-key")
 	destPath := filepath.Join(t.TempDir(), "downloaded.jpg")
-	if err := c.DownloadAsset("asset-123", destPath, ""); err == nil {
+	if err := c.DownloadAsset("asset-123", destPath, "", nil); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -392,7 +426,7 @@ func TestDownloadAssetCreateFileError(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "test-key")
-	err := c.DownloadAsset("asset-1", "/nonexistent-dir/file.jpg", "")
+	err := c.DownloadAsset("asset-1", "/nonexistent-dir/file.jpg", "", nil)
 	if err == nil {
 		t.Fatal("expected error for non-existent directory")
 	}
@@ -436,7 +470,7 @@ func TestGetAssetInvalidURL(t *testing.T) {
 
 func TestDownloadAssetInvalidURL(t *testing.T) {
 	c := NewImmichClient("://invalid", "key")
-	err := c.DownloadAsset("id", filepath.Join(t.TempDir(), "f"), "")
+	err := c.DownloadAsset("id", filepath.Join(t.TempDir(), "f"), "", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -658,7 +692,7 @@ func TestDownloadAssetFailsOnStalledBody(t *testing.T) {
 	c := NewImmichClient(server.URL, "test-key")
 	destPath := filepath.Join(t.TempDir(), "stalled.jpg")
 	start := time.Now()
-	err := c.DownloadAsset("asset-1", destPath, "")
+	err := c.DownloadAsset("asset-1", destPath, "", nil)
 	if err == nil {
 		t.Fatal("expected error for a stalled download")
 	}

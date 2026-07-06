@@ -207,10 +207,10 @@ immich-exif -y -force -all
 
 ## Output
 
-Console output with interactive single-keypress prompts. While assets are fetched and inspected, a live counter updates in place (skipped assets tick it too):
+Console output with interactive single-keypress prompts. While an asset is processed, a live counter line updates in place through each step — the percentage tracks the download of that file (skipped assets tick the counter too):
 
 ```
-[37/128] 28% Scanning IMG_1234.jpg...
+[37/128] Downloading IMG_1234.jpg... 45%
 ```
 
 Each asset with changes then shows a diff and waits for input (the counter line is erased first):
@@ -223,7 +223,7 @@ Each asset with changes then shows a diff and waits for input (the counter line 
 [y] confirm  [s] skip  [q] quit:
 ```
 
-No Enter key needed. Use `-y` to auto-confirm. When output is piped or redirected, the counter prints one line per asset instead of updating in place.
+No Enter key needed. Use `-y` to auto-confirm. When output is piped or redirected, the counter prints one line per step instead of updating in place, and percent-only updates are omitted.
 Interactive mode forces single-worker to avoid mixed prompts; parallel workers apply when using `-y`. Under `-y` each asset prints only its diff block (the scanning counter and per-step upload progress are omitted), and each block prints atomically, so multiple workers never interleave their output. Final outcomes and any failures are reported in the closing summary.
 
 Output is colorized when stdout is a terminal (added tags in green, changed tags in amber, failures in red). Colors are disabled automatically when the output is piped or redirected, and when `NO_COLOR` is set.

@@ -181,8 +181,33 @@ func TestEmitProgressCounterFallsBackToLinesWhenPiped(t *testing.T) {
 			Step:    "Scanning photo.jpg...",
 		})
 	})
-	if output != "[3/10] 30% Scanning photo.jpg...\n" {
-		t.Fatalf("expected one counter line per asset when piped, got: %q", output)
+	if output != "[3/10] Scanning photo.jpg...\n" {
+		t.Fatalf("expected one counter line per step when piped, got: %q", output)
+	}
+}
+
+func TestEmitProgressCounterDropsPercentUpdatesWhenPiped(t *testing.T) {
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Step: "Downloading a.mp4..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Percent: 42, Step: "Downloading a.mp4..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Percent: 100, Step: "Downloading a.mp4..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Step: "Analyzing a.mp4..."})
+	})
+	want := "[1/2] Downloading a.mp4...\n[1/2] Analyzing a.mp4...\n"
+	if output != want {
+		t.Fatalf("expected percent-only updates to be dropped when piped, got: %q", output)
+	}
+}
+
+func TestEmitProgressCounterShowsStepPercentOnTerminal(t *testing.T) {
+	withFakeTerminal(t)
+	emitter := &LogEmitter{}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 12, Percent: 45, Step: "Downloading a.mp4..."})
+	})
+	if output != "\r\x1b[K[1/12] Downloading a.mp4... 45%" {
+		t.Fatalf("expected the step percentage on the counter line, got: %q", output)
 	}
 }
 
@@ -193,7 +218,7 @@ func TestEmitProgressCounterRewritesInPlaceOnTerminal(t *testing.T) {
 		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Step: "Scanning a.jpg..."})
 		emitter.EmitProgress(model.ProgressEvent{AssetID: "a2", Index: 2, Total: 2, Step: "Scanning b.jpg..."})
 	})
-	want := "\r\x1b[K[1/2] 50% Scanning a.jpg...\r\x1b[K[2/2] 100% Scanning b.jpg..."
+	want := "\r\x1b[K[1/2] Scanning a.jpg...\r\x1b[K[2/2] Scanning b.jpg..."
 	if output != want {
 		t.Fatalf("expected in-place counter rewrites without newlines, got: %q", output)
 	}
@@ -230,7 +255,7 @@ func TestEmitProgressStepAfterCounterClearsCounterLine(t *testing.T) {
 		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 3, Step: "Scanning a.jpg..."})
 		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Filename: "a.jpg", Step: "Uploading new asset..."})
 	})
-	want := "\r\x1b[K[1/3] 33% Scanning a.jpg...\r\x1b[K=> a1 | a.jpg\nUploading new asset...\n"
+	want := "\r\x1b[K[1/3] Scanning a.jpg...\r\x1b[K=> a1 | a.jpg\nUploading new asset...\n"
 	if output != want {
 		t.Fatalf("expected the counter line to be erased before the upload step, got: %q", output)
 	}

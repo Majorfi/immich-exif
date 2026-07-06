@@ -17,6 +17,7 @@ type LogEmitter struct {
 	lastAssetID  string
 	lastFilename string
 	transient    bool
+	lastCounter  string
 }
 
 func (e *LogEmitter) EmitProgress(event model.ProgressEvent) {
@@ -41,12 +42,21 @@ func (e *LogEmitter) EmitProgress(event model.ProgressEvent) {
 }
 
 func (e *LogEmitter) printCounterLocked(event model.ProgressEvent) {
-	line := fmt.Sprintf("[%d/%d] %d%% %s", event.Index, event.Total, event.Index*100/event.Total, model.SanitizeForTerminal(event.Step))
+	line := fmt.Sprintf("[%d/%d] %s", event.Index, event.Total, model.SanitizeForTerminal(event.Step))
 	if isTerminalFn() {
+		if event.Percent > 0 {
+			line = fmt.Sprintf("%s %d%%", line, event.Percent)
+		}
 		fmt.Printf("\r\033[K%s", dim(line))
 		e.transient = true
 		return
 	}
+	// Piped output cannot be rewritten in place: print one line per step and
+	// drop percent-only updates, or a single download would emit 100 lines.
+	if line == e.lastCounter {
+		return
+	}
+	e.lastCounter = line
 	fmt.Printf("%s\n", dim(line))
 }
 
@@ -112,6 +122,7 @@ func (e *LogEmitter) EmitAllDone(event model.AllDoneEvent) {
 	e.clearTransientLocked()
 	e.lastAssetID = ""
 	e.lastFilename = ""
+	e.lastCounter = ""
 	e.mu.Unlock()
 
 	var succeeded, skipped, failed int

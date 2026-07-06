@@ -4,10 +4,13 @@ type ProgressEvent struct {
 	AssetID  string
 	Filename string
 	// Index/Total mark a countable batch position; when Total > 0 the emitter
-	// renders the event as a live "[i/total] p%" counter line.
+	// renders the event as a live "[i/total] <step>" counter line.
 	Index int
 	Total int
-	Step  string
+	// Percent is the progress of the current step (e.g. download transfer),
+	// not of the batch; 0 means no percentage is shown.
+	Percent int
+	Step    string
 }
 
 type DiffSymbol string

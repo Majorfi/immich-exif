@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/majorfi/immich-exif/api"
@@ -19,7 +20,7 @@ type recordingEmitter struct {
 
 func (e *recordingEmitter) EmitProgress(event model.ProgressEvent) {
 	e.progress = append(e.progress, event)
-	e.sequence = append(e.sequence, "progress")
+	e.sequence = append(e.sequence, "progress:"+event.Step)
 }
 
 func (e *recordingEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
@@ -27,7 +28,7 @@ func (e *recordingEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
 	return model.ActionConfirm
 }
 
-func TestProcessAssetEmitsScanProgressBeforeDiff(t *testing.T) {
+func TestProcessAssetEmitsStepProgress(t *testing.T) {
 	server := assetServerWithExif()
 	defer server.Close()
 
@@ -43,21 +44,48 @@ func TestProcessAssetEmitsScanProgressBeforeDiff(t *testing.T) {
 		t.Fatalf("expected success, got %s: %s", result.Status, result.Message)
 	}
 
-	if len(emitter.sequence) < 2 || emitter.sequence[0] != "progress" || emitter.sequence[1] != "diff" {
-		t.Fatalf("expected scan progress before diff, got sequence: %v", emitter.sequence)
+	diffAt := slices.Index(emitter.sequence, "diff")
+	if diffAt == -1 {
+		t.Fatalf("expected a diff to be emitted, got sequence: %v", emitter.sequence)
 	}
-	scan := emitter.progress[0]
-	if scan.Step != "Scanning photo.jpg..." {
-		t.Fatalf("unexpected scan step: %q", scan.Step)
+
+	wantBeforeDiff := []string{
+		"progress:Scanning photo.jpg...",
+		"progress:Downloading photo.jpg...",
+		"progress:Analyzing photo.jpg...",
 	}
-	if scan.Index != 2 || scan.Total != 5 {
-		t.Fatalf("expected batch position 2/5, got %d/%d", scan.Index, scan.Total)
+	matched := 0
+	for _, s := range emitter.sequence[:diffAt] {
+		if matched < len(wantBeforeDiff) && s == wantBeforeDiff[matched] {
+			matched++
+		}
 	}
-	if scan.AssetID != "asset-1" {
-		t.Fatalf("expected asset ID on scan event, got %q", scan.AssetID)
+	if matched != len(wantBeforeDiff) {
+		t.Fatalf("expected steps %v in order before the diff, got: %v", wantBeforeDiff, emitter.sequence[:diffAt])
 	}
-	if scan.Filename != "" {
-		t.Fatalf("scan event must not carry a filename (it would trigger the emitter header), got %q", scan.Filename)
+	if !slices.Contains(emitter.sequence[diffAt:], "progress:Writing tags to photo.jpg...") {
+		t.Fatalf("expected a writing-tags step after the diff, got: %v", emitter.sequence[diffAt:])
+	}
+
+	first := emitter.progress[0]
+	if first.Index != 2 || first.Total != 5 {
+		t.Fatalf("expected batch position 2/5, got %d/%d", first.Index, first.Total)
+	}
+	if first.AssetID != "asset-1" {
+		t.Fatalf("expected asset ID on step events, got %q", first.AssetID)
+	}
+	if first.Filename != "" {
+		t.Fatalf("step events must not carry a filename (it would trigger the emitter header), got %q", first.Filename)
+	}
+
+	sawFullDownload := false
+	for _, p := range emitter.progress {
+		if p.Step == "Downloading photo.jpg..." && p.Percent == 100 {
+			sawFullDownload = true
+		}
+	}
+	if !sawFullDownload {
+		t.Fatalf("expected a download progress event reaching 100%%, got: %+v", emitter.progress)
 	}
 }
 
