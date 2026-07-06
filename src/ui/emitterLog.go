@@ -161,11 +161,27 @@ func (e *LogEmitter) EmitDiff(event model.DiffEvent) model.DiffAction {
 	e.rememberAsset(event.AssetID, event.Filename)
 
 	fmt.Printf("[%d/%d] %d EXIF mismatch found for %s:\n", event.Index, event.Total, len(event.Entries), model.SanitizeForTerminal(model.TruncateFilename(event.Filename, 60)))
+	// Column widths grow to the block's longest tag and old value so no row
+	// pushes the arrow out of line; the old column is capped so one huge
+	// value (e.g. a long description) cannot blow up every row.
+	tagWidth := 22
+	oldWidth := 20
+	for _, d := range event.Entries {
+		if len(d.Tag) > tagWidth {
+			tagWidth = len(d.Tag)
+		}
+		if l := len(model.SanitizeForTerminal(d.Old)); l > oldWidth {
+			oldWidth = l
+		}
+	}
+	if oldWidth > 45 {
+		oldWidth = 45
+	}
 	for _, d := range event.Entries {
 		// Old/New carry server- and file-derived values; sanitize them so they
 		// cannot inject escape sequences that redraw or spoof the prompt below.
-		oldArrow := dim(fmt.Sprintf("%-20s ->", model.SanitizeForTerminal(d.Old)))
-		fmt.Printf("    %s %-22s %s %s\n", diffSymbol(string(d.Symbol)), d.Tag, oldArrow, model.SanitizeForTerminal(d.New))
+		oldArrow := dim(fmt.Sprintf("%-*s ->", oldWidth, model.SanitizeForTerminal(d.Old)))
+		fmt.Printf("    %s %-*s %s %s\n", diffSymbol(string(d.Symbol)), tagWidth, d.Tag, oldArrow, model.SanitizeForTerminal(d.New))
 	}
 	if e.AutoConfirm {
 		fmt.Println()

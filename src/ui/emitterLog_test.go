@@ -55,6 +55,39 @@ func TestTruncateFilename(t *testing.T) {
 	}
 }
 
+func TestEmitDiffAlignsColumnsAcrossLongTagsAndValues(t *testing.T) {
+	emitter := &LogEmitter{AutoConfirm: true}
+	output := captureStdout(func() {
+		emitter.EmitDiff(model.DiffEvent{AssetID: "a1", Index: 10, Total: 12, Filename: "a.jpg",
+			Entries: []model.DiffEntry{
+				{Symbol: model.DiffAdd, Tag: "City", Old: "(none)", New: "Rennes"},
+				{Symbol: model.DiffAdd, Tag: "XMP-exif:DateTimeOriginal", Old: "(none)", New: "2026-04-02T13:13:17.901+02:00"},
+				{Symbol: model.DiffChange, Tag: "CreateDate", Old: "2026-04-02T11:13:17.901+02:00", New: "2026-04-02T13:13:17.901+02:00"},
+			}})
+	})
+
+	rows := strings.Split(strings.TrimRight(output, "\n"), "\n")[1:]
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 diff rows, got: %q", output)
+	}
+	arrowAt := strings.Index(rows[0], "->")
+	oldAt := strings.Index(rows[0], "(none)")
+	if arrowAt == -1 || oldAt == -1 {
+		t.Fatalf("expected an old value and arrow on the first row, got: %q", rows[0])
+	}
+	for _, row := range rows[1:] {
+		if strings.Index(row, "->") != arrowAt {
+			t.Fatalf("expected every arrow at column %d, got rows:\n%q", arrowAt, rows)
+		}
+	}
+	if strings.Index(rows[1], "(none)") != oldAt {
+		t.Fatalf("expected old values at column %d despite the longer tag, got rows:\n%q", oldAt, rows)
+	}
+	if strings.Index(rows[2], "2026-04-02T11") != oldAt {
+		t.Fatalf("expected the changed old value at column %d, got rows:\n%q", oldAt, rows)
+	}
+}
+
 func TestEmitDiffAutoConfirmReturnsConfirm(t *testing.T) {
 	emitter := &LogEmitter{AutoConfirm: true}
 	action := emitter.EmitDiff(model.DiffEvent{
