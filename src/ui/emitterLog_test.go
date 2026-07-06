@@ -273,7 +273,27 @@ func TestEmitAllDoneClearsPendingCounterLine(t *testing.T) {
 	}
 }
 
-func TestScanProgressKeepsAutoConfirmOutputDiffOnly(t *testing.T) {
+func TestAutoConfirmShowsLiveCounterOnTerminal(t *testing.T) {
+	withFakeTerminal(t)
+	emitter := &LogEmitter{AutoConfirm: true}
+	output := captureStdout(func() {
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 12, Percent: 45, Step: "Downloading a.mp4..."})
+		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Filename: "a.mp4", Step: "Uploading new asset..."})
+		emitter.EmitDiff(model.DiffEvent{AssetID: "a1", Index: 1, Total: 12, Filename: "a.mp4",
+			Entries: []model.DiffEntry{{Symbol: model.DiffAdd, Tag: "Make", Old: "(none)", New: "Canon"}}})
+	})
+	if !strings.HasPrefix(output, "\r\x1b[K[1/12] Downloading a.mp4... 45%") {
+		t.Fatalf("expected the live counter under -y on a terminal, got: %q", output)
+	}
+	if strings.Contains(output, "Uploading new asset") {
+		t.Fatalf("expected upload steps to stay suppressed under -y, got: %q", output)
+	}
+	if !strings.Contains(output, "45%\r\x1b[K[1/12] 1 EXIF mismatch") {
+		t.Fatalf("expected the counter to be erased right before the diff block, got: %q", output)
+	}
+}
+
+func TestAutoConfirmPipedOutputStaysDiffOnly(t *testing.T) {
 	emitter := &LogEmitter{AutoConfirm: true}
 	output := captureStdout(func() {
 		emitter.EmitProgress(model.ProgressEvent{AssetID: "a1", Index: 1, Total: 2, Step: "Scanning a.jpg..."})

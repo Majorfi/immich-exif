@@ -21,17 +21,22 @@ type LogEmitter struct {
 }
 
 func (e *LogEmitter) EmitProgress(event model.ProgressEvent) {
-	if e.AutoConfirm {
-		return
-	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	if event.Total > 0 {
+		// -y keeps piped output diff-only, but on a terminal the live counter
+		// still shows: it is transient and erased before any block prints.
+		if e.AutoConfirm && !isTerminalFn() {
+			return
+		}
 		e.printCounterLocked(event)
 		return
 	}
 
+	if e.AutoConfirm {
+		return
+	}
 	e.clearTransientLocked()
 	if event.Filename != "" && (event.AssetID != e.lastAssetID || event.Filename != e.lastFilename) {
 		fmt.Printf("%s %s | %s\n", dim("=>"), model.ShortID(event.AssetID), model.SanitizeForTerminal(model.TruncateFilename(event.Filename, 60)))
