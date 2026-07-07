@@ -45,9 +45,10 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	}
 	// Replacing an external-library asset would migrate a copy into the
 	// internal library and duplicate it at the next scan; read-only modes
-	// (dry-run, export) are safe. libraryId means external only on servers
-	// where it is nullable (1.106+) — before that every asset carried one.
-	if cfg.WillReplace() && client.CanDetectExternalLibrary() && asset.LibraryID != "" {
+	// (dry-run, export) are safe. A set libraryId always means external on
+	// servers this client can address: the /api/assets routes and nullable
+	// libraryId both arrived in Immich 1.106.
+	if cfg.WillReplace() && asset.LibraryID != "" {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset belongs to an external library; replacing it would migrate it into the internal library (dry-run and export still work)"}
 	}
 	if model.IsLivePhotoMotionCandidate(*asset) {
