@@ -1,9 +1,5 @@
 # Immich Exif
 
-## Beta
-
-Validated end-to-end against real Immich servers (download → embed → verify → replace), but still pre-1.0. The tool replaces real assets, so always preview a run with `-dry-run` first.
-
 A CLI tool that synchronizes metadata from an [Immich](https://immich.app) photo server back into the original files.
 
 Immich stores rich metadata (GPS, descriptions, ratings, camera info, dates) in its database, but this metadata isn't always embedded in the file itself. This tool bridges that gap by downloading each asset, embedding the missing tags via `exiftool`, and re-uploading the modified file.
