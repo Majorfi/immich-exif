@@ -1592,3 +1592,49 @@ func TestParseConfigNoDotenvWarningWhenBothFromDotenv(t *testing.T) {
 		t.Fatalf("no provenance warning expected when both values come from .env, got %q", out)
 	}
 }
+
+// Kills the mutation where resolveAssetIDs stops deriving the external-library
+// pre-filter from the run mode (replace vs read-only).
+func TestResolveAssetIDsExternalLibraryGate(t *testing.T) {
+	desc := "d"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body model.SearchMetadataRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		items := []model.AssetResponse{}
+		if body.Visibility == "timeline" {
+			items = append(items,
+				model.AssetResponse{ID: "internal-1", ExifInfo: &model.ExifInfo{Description: &desc}},
+				model.AssetResponse{ID: "external-1", LibraryID: "5b9f1a2e-1111-4222-8333-444455556666", ExifInfo: &model.ExifInfo{Description: &desc}},
+			)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(model.SearchMetadataResponse{Assets: model.SearchAssets{Items: items}})
+	}))
+	defer server.Close()
+
+	client := api.NewImmichClient(server.URL, "key")
+
+	ids, stats, err := resolveAssetIDs(client, &model.Config{All: true}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "internal-1" {
+		t.Fatalf("replace run must pre-filter the external asset, got %v", ids)
+	}
+	if stats.ExternalLibrarySkipped != 1 {
+		t.Fatalf("expected 1 external-library skip, got %d", stats.ExternalLibrarySkipped)
+	}
+
+	ids, stats, err = resolveAssetIDs(client, &model.Config{All: true, DryRun: true}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("dry-run must keep external assets, got %v", ids)
+	}
+	if stats.ExternalLibrarySkipped != 0 {
+		t.Fatalf("expected no external-library skips on dry-run, got %d", stats.ExternalLibrarySkipped)
+	}
+}

@@ -17,6 +17,7 @@ type AssetResponse struct {
 	IsTrashed        bool      `json:"isTrashed"`
 	Visibility       string    `json:"visibility"`
 	LivePhotoVideoID string    `json:"livePhotoVideoId"`
+	LibraryID        string    `json:"libraryId"`
 	ExifInfo         *ExifInfo `json:"exifInfo"`
 }
 
@@ -90,6 +91,12 @@ type UpdateAssetsRequest struct {
 type UploadResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
+}
+
+// WillReplace reports whether this run mutates server assets; dry-run and
+// export are read-only.
+func (c *Config) WillReplace() bool {
+	return !c.DryRun && c.ExportDir == ""
 }
 
 type ProcessResult struct {

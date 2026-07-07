@@ -17,6 +17,7 @@ type AssetSelectionStats struct {
 	NoWritableMetadataSkipped int
 	UnsupportedVideoSkipped   int
 	LivePhotoMotionSkipped    int
+	ExternalLibrarySkipped    int
 	StateSkipped              int
 }
 
@@ -75,7 +76,11 @@ func (c *ImmichClient) forEachSearchPage(albumIDs []string, withExif bool, visib
 	return nil
 }
 
-func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool) ([]string, AssetSelectionStats, error) {
+// ListAllAssetIDs pages every asset and returns the IDs worth processing.
+// skipExternalLibrary must be true when the run replaces assets: uploading an
+// external-library asset would migrate it into the internal library, so those
+// are only eligible for the read-only modes (dry-run, export).
+func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool, skipExternalLibrary bool) ([]string, AssetSelectionStats, error) {
 	var allIDs []string
 	stats := AssetSelectionStats{}
 	seen := map[string]bool{}
@@ -86,6 +91,10 @@ func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool
 				continue
 			}
 			seen[asset.ID] = true
+			if skipExternalLibrary && asset.LibraryID != "" {
+				stats.ExternalLibrarySkipped++
+				continue
+			}
 			if model.IsLivePhotoMotionCandidate(asset) {
 				stats.LivePhotoMotionSkipped++
 				continue

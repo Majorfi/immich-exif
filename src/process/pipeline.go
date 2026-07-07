@@ -43,6 +43,14 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	if asset.IsTrashed {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset is in the Immich trash; restore it before processing"}
 	}
+	// Replacing an external-library asset would migrate a copy into the
+	// internal library and duplicate it at the next scan; read-only modes
+	// (dry-run, export) are safe. A set libraryId always means external on
+	// servers this client can address: the /api/assets routes and nullable
+	// libraryId both arrived in Immich 1.106.
+	if cfg.WillReplace() && asset.LibraryID != "" {
+		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset belongs to an external library; replacing it would migrate it into the internal library (dry-run and export still work)"}
+	}
 	if model.IsLivePhotoMotionCandidate(*asset) {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "hidden video (likely a live-photo motion part); replacing it would sever the pair"}
 	}

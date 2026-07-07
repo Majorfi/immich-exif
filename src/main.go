@@ -77,7 +77,7 @@ func run() int {
 		return 1
 	}
 
-	if !cfg.DryRun && cfg.ExportDir == "" {
+	if cfg.WillReplace() {
 		warnIfServerTrashDisabled(client)
 	}
 
@@ -121,18 +121,7 @@ func run() int {
 		return 1
 	}
 
-	if stats.NoWritableMetadataSkipped > 0 {
-		fmt.Printf("Pre-filtered %d assets with no writable metadata to embed\n", stats.NoWritableMetadataSkipped)
-	}
-	if stats.UnsupportedVideoSkipped > 0 {
-		fmt.Printf("Pre-filtered %d unsupported video assets\n", stats.UnsupportedVideoSkipped)
-	}
-	if stats.LivePhotoMotionSkipped > 0 {
-		fmt.Printf("Pre-filtered %d hidden videos (likely live-photo motion parts)\n", stats.LivePhotoMotionSkipped)
-	}
-	if stats.StateSkipped > 0 {
-		fmt.Printf("Skipped %d assets with unchanged metadata\n", stats.StateSkipped)
-	}
+	printSelectionStats(stats)
 
 	if len(assetIDs) == 0 {
 		fmt.Println("No assets to process.")
@@ -175,20 +164,6 @@ func run() int {
 		}
 	}
 	return 0
-}
-
-// warnIfServerTrashDisabled surfaces that the replace path's recovery window
-// does not exist: with the trash feature off, Immich purges soft-deleted
-// assets immediately, so a trashed original cannot be restored. Best-effort —
-// a least-privilege key may not be allowed to read the features endpoint.
-func warnIfServerTrashDisabled(client *api.ImmichClient) {
-	features, err := client.Features()
-	if err != nil {
-		return
-	}
-	if !features.Trash {
-		fmt.Fprintln(os.Stderr, "Warning: this server has the trash feature DISABLED; replaced originals are deleted immediately with no recovery window")
-	}
 }
 
 func listAlbums(client *api.ImmichClient) int {
@@ -260,7 +235,7 @@ func resolveAssetIDs(client *api.ImmichClient, cfg *model.Config, shouldSkip fun
 	stats := api.AssetSelectionStats{}
 
 	if cfg.All {
-		ids, allStats, err := client.ListAllAssetIDs(shouldSkip)
+		ids, allStats, err := client.ListAllAssetIDs(shouldSkip, cfg.WillReplace())
 		if err != nil {
 			return nil, api.AssetSelectionStats{}, fmt.Errorf("list all assets: %w", err)
 		}
@@ -268,6 +243,7 @@ func resolveAssetIDs(client *api.ImmichClient, cfg *model.Config, shouldSkip fun
 		stats.NoWritableMetadataSkipped += allStats.NoWritableMetadataSkipped
 		stats.UnsupportedVideoSkipped += allStats.UnsupportedVideoSkipped
 		stats.LivePhotoMotionSkipped += allStats.LivePhotoMotionSkipped
+		stats.ExternalLibrarySkipped += allStats.ExternalLibrarySkipped
 		stats.StateSkipped += allStats.StateSkipped
 	}
 
