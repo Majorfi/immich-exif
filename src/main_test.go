@@ -1353,6 +1353,8 @@ func TestMaybeResolveDuplicatesNowCancelledContext(t *testing.T) {
 }
 
 func TestRunDryRunHappyPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+
 	origCheck := exif.CheckExiftoolFn
 	origRead := exif.ReadExifTagsFn
 	origWrite := exif.WriteExifTagsFn
