@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/majorfi/immich-exif/api"
 	"github.com/majorfi/immich-exif/model"
@@ -17,12 +18,46 @@ import (
 
 const noAlbumDirName = "no-album"
 
+const tmpDirPrefix = ".immich-exif-tmp-"
+
+// staleTmpDirMaxAge must stay generous: a concurrent run from the same
+// directory refreshes its tmp dir mtime every time a per-asset subdir is
+// created or removed, but a single huge asset can keep that mtime unchanged
+// for however long its (progressing) transfer takes.
+const staleTmpDirMaxAge = 24 * time.Hour
+
+// sweepStaleTmpDirs removes tmp dirs orphaned by runs that were hard-killed
+// before the deferred cleanup in run() could fire.
+func sweepStaleTmpDirs(wd string) {
+	entries, err := os.ReadDir(wd)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), tmpDirPrefix) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if time.Since(info.ModTime()) < staleTmpDirMaxAge {
+			continue
+		}
+		stalePath := filepath.Join(wd, entry.Name())
+		if err := os.RemoveAll(stalePath); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not remove stale tmp dir %s: %v\n", stalePath, err)
+		}
+	}
+}
+
 func setupTmpDir() (string, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("resolve working directory: %w", err)
 	}
-	dir, err := os.MkdirTemp(wd, ".immich-exif-tmp-")
+	sweepStaleTmpDirs(wd)
+	dir, err := os.MkdirTemp(wd, tmpDirPrefix)
 	if err != nil {
 		return "", fmt.Errorf("create tmp dir: %w", err)
 	}
