@@ -73,7 +73,7 @@ When using `--all` or `-album all`, the tool maintains a local SQLite state cach
 
 ## Prerequisites
 
-- An Immich server with a valid API key. The full replace flow needs **Immich v2.2+** (`/api/assets/copy`); auto-detection needs 1.113+ (`/api/server/about`, or force `-immich-api`); scan, `-dry-run` and `-export-dir` work from 1.106
+- An Immich server with a valid API key. The full replace flow needs **Immich v2.2+** (`/api/assets/copy`); auto-detection needs 1.113+ (`/api/server/about`, or force `-immich-api`); read-only modes (`-list-albums`, `-dry-run`, `-export-dir`) work from 1.106
 - [exiftool](https://exiftool.org/) on your `PATH` (the Docker image already bundles it)
 - [Go 1.24+](https://golang.org/dl/) only if you build from source
 
