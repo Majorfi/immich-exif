@@ -21,8 +21,10 @@ type FaceRegion struct {
 	H    float64
 }
 
-// regionCoordTolerance absorbs the %.5f serialization rounding plus the
-// sub-pixel jitter of boxes that round-tripped through Immich's importer.
+// regionCoordTolerance absorbs the %.5f serialization rounding; the effective
+// per-axis tolerance is widened to two raster pixels (see coordTolerance)
+// because Immich's importer floors region corners to whole pixels, which on
+// small images shifts a coordinate by more than this constant.
 const regionCoordTolerance = 0.001
 
 // BuildFaceRegions converts Immich face boxes (pixels on the
@@ -30,10 +32,28 @@ const regionCoordTolerance = 0.001
 // stored image's coordinate space. orientation is the file's EXIF Orientation
 // value (1-8; anything else means unrotated). Faces without a visible, named
 // person are dropped, mirroring what Immich itself imports.
+//
+// A face with sourceType "exif" is an echo of the file's own regions (the
+// server's metadata import). Counting echoes next to the same person's
+// detected faces makes the file trail the server forever: each replace
+// re-imports the written region and re-detects the face, growing the set by
+// one per run. Echoes are therefore dropped when the person also has a
+// non-exif face, and kept only as the person's sole source (server without
+// ML, regions imported from files).
 func BuildFaceRegions(faces []model.AssetFaceResponse, orientation int) []FaceRegion {
+	detectedPersonIDs := map[string]bool{}
+	for _, face := range faces {
+		if face.Person != nil && face.SourceType != "exif" {
+			detectedPersonIDs[face.Person.ID] = true
+		}
+	}
+
 	var regions []FaceRegion
 	for _, face := range faces {
 		if face.Person == nil || face.Person.IsHidden {
+			continue
+		}
+		if face.SourceType == "exif" && detectedPersonIDs[face.Person.ID] {
 			continue
 		}
 		name := strings.TrimSpace(face.Person.Name)
@@ -100,7 +120,7 @@ func CompareFaceRegions(regions []FaceRegion, rasterWidth, rasterHeight int, exi
 		return nil
 	}
 	current := parseFaceRegions(existing["XMP-mwg-rs:RegionInfo"])
-	if faceRegionsMatch(current, regions) {
+	if FaceRegionsMatch(current, regions, rasterWidth, rasterHeight) {
 		return nil
 	}
 
@@ -110,26 +130,43 @@ func CompareFaceRegions(regions []FaceRegion, rasterWidth, rasterHeight int, exi
 		entry.Symbol = model.DiffChange
 		entry.Old = regionNames(current)
 	}
+	// A geometry-only rewrite keeps the name lists identical; without a marker
+	// the confirmation diff would read "Alice -> Alice".
+	if entry.Old == entry.New {
+		entry.New += " (face boxes moved)"
+	}
 	tc.Diffs = append(tc.Diffs, entry)
 	return tc
 }
 
-func faceRegionsMatch(current, desired []FaceRegion) bool {
+// FaceRegionsMatch reports whether two sorted region sets agree within the
+// round-trip noise: %.5f serialization rounding plus the up-to-two-pixel
+// quantization Immich's importer introduces by flooring region corners.
+func FaceRegionsMatch(current, desired []FaceRegion, rasterWidth, rasterHeight int) bool {
 	if len(current) != len(desired) {
 		return false
 	}
+	tolX := coordTolerance(rasterWidth)
+	tolY := coordTolerance(rasterHeight)
 	for i := range desired {
 		if current[i].Name != desired[i].Name {
 			return false
 		}
-		if math.Abs(current[i].X-desired[i].X) > regionCoordTolerance ||
-			math.Abs(current[i].Y-desired[i].Y) > regionCoordTolerance ||
-			math.Abs(current[i].W-desired[i].W) > regionCoordTolerance ||
-			math.Abs(current[i].H-desired[i].H) > regionCoordTolerance {
+		if math.Abs(current[i].X-desired[i].X) > tolX ||
+			math.Abs(current[i].Y-desired[i].Y) > tolY ||
+			math.Abs(current[i].W-desired[i].W) > tolX ||
+			math.Abs(current[i].H-desired[i].H) > tolY {
 			return false
 		}
 	}
 	return true
+}
+
+func coordTolerance(rasterDim int) float64 {
+	if rasterDim <= 0 {
+		return regionCoordTolerance
+	}
+	return math.Max(regionCoordTolerance, 2/float64(rasterDim))
 }
 
 // parseFaceRegions reads the RegionInfo structure exiftool returns for a
@@ -222,7 +259,11 @@ func escapeStructValue(s string) string {
 func regionNames(regions []FaceRegion) string {
 	names := make([]string, 0, len(regions))
 	for _, region := range regions {
-		names = append(names, region.Name)
+		name := region.Name
+		if name == "" {
+			name = "(unnamed)"
+		}
+		names = append(names, name)
 	}
 	return strings.Join(names, ", ")
 }

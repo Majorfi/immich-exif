@@ -127,8 +127,9 @@ On Immich 1.113+ you can scope the API key to exactly what the tool needs (older
 | `asset.update`   | Restore visibility for archived or hidden assets                |
 | `asset.delete`   | Trash the old original after a verified replacement             |
 | `album.read`     | Resolve `-album` / `-album all` selections                      |
+| `face.read`      | Fetch face boxes — only needed with `-faces`                    |
 
-Read-only modes need less: `-dry-run` and `-export-dir` never write to the server, so they only require `server.about`, `asset.read`, `asset.download`, and `album.read` (drop `album.read` too if you only pass asset IDs).
+Read-only modes need less: `-dry-run` and `-export-dir` never write to the server, so they only require `server.about`, `asset.read`, `asset.download`, and `album.read` (drop `album.read` too if you only pass asset IDs; add `face.read` if you combine them with `-faces`).
 
 ## Usage
 
@@ -251,7 +252,9 @@ With `-faces`, every person you have **named** in Immich is written into the fil
 - Only **named, visible** people are written. Unnamed ML clusters and people you hid in Immich are left out — the same rule Immich applies when importing regions from files.
 - Regions are written in the stored image's coordinate space, applying the exact inverse of the orientation transform Immich uses on import, so rotated photos round-trip correctly.
 - When the file's regions disagree with Immich, the whole `RegionInfo` structure is **replaced** — Immich is the source of truth, like for every other synced tag. When Immich has no named faces for an asset, existing file regions are left untouched (never cleared).
-- Round-trip bonus: with Immich's _"Import faces from metadata"_ server setting enabled, the names embedded by `-faces` are re-imported when the replaced file is scanned — face names survive the replace.
+- Round-trip bonus: with Immich's _"Import faces from metadata"_ server setting enabled, the names embedded by `-faces` are re-imported when the replaced file is scanned — face names survive the replace. Re-imported regions (`sourceType: exif`) are recognized as echoes of the file's own content and never counted next to the same person's detected faces, so repeated runs converge instead of duplicating regions.
+- The key needs the `face.read` permission (see [API key permissions](#api-key-permissions)).
+- Incremental-cache caveats: the `-all` state cache keys on the set of _names_, so correcting a face's box or reassigning a face between two already-named people does not invalidate it — use `-force` to re-check. Toggling `-faces` on or off changes the cache key, so the first run after a toggle re-checks the library once.
 
 ### DateTime and timezone handling
 

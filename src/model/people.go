@@ -21,6 +21,7 @@ type AssetFaceResponse struct {
 	BoundingBoxY2 int             `json:"boundingBoxY2"`
 	ImageWidth    int             `json:"imageWidth"`
 	ImageHeight   int             `json:"imageHeight"`
+	SourceType    string          `json:"sourceType"`
 	Person        *PersonResponse `json:"person"`
 }
 

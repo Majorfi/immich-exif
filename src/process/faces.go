@@ -11,24 +11,36 @@ func wantsFaceRegions(cfg *model.Config, asset model.AssetResponse) bool {
 }
 
 // appendFaceRegionChange fetches the asset's face boxes and appends the
-// region rewrite when the file disagrees with Immich. The file's own
-// Orientation and pixel dimensions anchor the regions, so this must run after
-// the exif read. A file that reports no pixel dimensions gets no regions
-// rather than misanchored ones.
-func appendFaceRegionChange(client *api.ImmichClient, cfg *model.Config, asset model.AssetResponse, existing exif.ExifTagMap, changes []exif.TagChange) ([]exif.TagChange, error) {
+// region rewrite when the file disagrees with Immich, returning the regions
+// it based the decision on so they can be re-checked before upload. The
+// file's own Orientation and pixel dimensions anchor the regions, so this
+// must run after the exif read. A file that reports no pixel dimensions gets
+// no regions rather than misanchored ones.
+func appendFaceRegionChange(client *api.ImmichClient, cfg *model.Config, asset model.AssetResponse, existing exif.ExifTagMap, changes []exif.TagChange) ([]exif.TagChange, []exif.FaceRegion, error) {
 	if !wantsFaceRegions(cfg, asset) {
-		return changes, nil
+		return changes, nil, nil
 	}
 	faces, err := client.GetAssetFaces(asset.ID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	regions := exif.BuildFaceRegions(faces, intTag(existing, "Orientation"))
 	change := exif.CompareFaceRegions(regions, intTag(existing, "ImageWidth"), intTag(existing, "ImageHeight"), existing)
 	if change != nil {
 		changes = append(changes, *change)
 	}
-	return changes, nil
+	return changes, regions, nil
+}
+
+// faceRegionsStale reports whether the server's faces moved away from the
+// regions this run is about to embed.
+func faceRegionsStale(client *api.ImmichClient, assetID string, existing exif.ExifTagMap, written []exif.FaceRegion) (bool, error) {
+	faces, err := client.GetAssetFaces(assetID)
+	if err != nil {
+		return false, err
+	}
+	fresh := exif.BuildFaceRegions(faces, intTag(existing, "Orientation"))
+	return !exif.FaceRegionsMatch(fresh, written, intTag(existing, "ImageWidth"), intTag(existing, "ImageHeight")), nil
 }
 
 // intTag reads a numeric exiftool tag (-n makes them JSON numbers).

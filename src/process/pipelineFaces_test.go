@@ -155,6 +155,93 @@ func TestProcessAssetFacesFetchFails(t *testing.T) {
 	}
 }
 
+func TestProcessAssetSkipsUploadWhenFacesChangeMidRun(t *testing.T) {
+	var facesCalls atomic.Int32
+	firstFaces := []model.AssetFaceResponse{{
+		BoundingBoxX1: 100, BoundingBoxY1: 50, BoundingBoxX2: 300, BoundingBoxY2: 250,
+		ImageWidth: 1000, ImageHeight: 500,
+		Person: &model.PersonResponse{ID: "p1", Name: "Alice"},
+	}}
+	movedFaces := []model.AssetFaceResponse{{
+		BoundingBoxX1: 500, BoundingBoxY1: 50, BoundingBoxX2: 700, BoundingBoxY2: 250,
+		ImageWidth: 1000, ImageHeight: 500,
+		Person: &model.PersonResponse{ID: "p1", Name: "Alice"},
+	}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/faces" {
+			call := facesCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			if call == 1 {
+				json.NewEncoder(w).Encode(firstFaces)
+				return
+			}
+			json.NewEncoder(w).Encode(movedFaces)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/original") {
+			w.Write([]byte("fake-image-data"))
+			return
+		}
+		asset := model.AssetResponse{
+			ID:               "asset-1",
+			OriginalFileName: "photo.jpg",
+			Checksum:         sha1HexOf("fake-image-data"),
+			People:           []model.PersonResponse{{ID: "p1", Name: "Alice"}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(asset)
+	}))
+	defer server.Close()
+
+	defer withMockExiftool(
+		func(string) (exif.ExifTagMap, error) {
+			return exif.ExifTagMap{"ImageWidth": float64(4000), "ImageHeight": float64(2000)}, nil
+		},
+		func(string, []string) error { return nil },
+	)()
+
+	client := api.NewImmichClient(server.URL, "key")
+	uploader := &mockUploader{outcome: UploadOutcome{NewID: "new-id", Cacheable: true}}
+	result := ProcessAsset(client, uploader, &model.Config{Faces: true}, "asset-1", 1, 1, &noopEmitter{}, nil)
+	if result.Status != model.StatusSkipped || !strings.Contains(result.Message, "faces changed") {
+		t.Fatalf("expected 'faces changed' skip, got %s: %s", result.Status, result.Message)
+	}
+	if facesCalls.Load() != 2 {
+		t.Fatalf("expected 2 faces calls (compare + pre-upload re-check), got %d", facesCalls.Load())
+	}
+}
+
+func TestProcessAssetReplaceRechecksFaces(t *testing.T) {
+	var facesCalls atomic.Int32
+	server := facesAssetServer(
+		[]model.PersonResponse{{ID: "p1", Name: "Alice"}},
+		[]model.AssetFaceResponse{{
+			BoundingBoxX1: 100, BoundingBoxY1: 50, BoundingBoxX2: 300, BoundingBoxY2: 250,
+			ImageWidth: 1000, ImageHeight: 500,
+			Person: &model.PersonResponse{ID: "p1", Name: "Alice"},
+		}},
+		http.StatusOK, &facesCalls,
+	)
+	defer server.Close()
+
+	defer withMockExiftool(
+		func(string) (exif.ExifTagMap, error) {
+			return exif.ExifTagMap{"ImageWidth": float64(4000), "ImageHeight": float64(2000)}, nil
+		},
+		func(string, []string) error { return nil },
+	)()
+
+	client := api.NewImmichClient(server.URL, "key")
+	uploader := &mockUploader{outcome: UploadOutcome{NewID: "new-id", Cacheable: true}}
+	result := ProcessAsset(client, uploader, &model.Config{Faces: true}, "asset-1", 1, 1, &noopEmitter{}, nil)
+	if result.Status != model.StatusSuccess {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Message)
+	}
+	if facesCalls.Load() != 2 {
+		t.Fatalf("expected 2 faces calls (compare + pre-upload re-check), got %d", facesCalls.Load())
+	}
+}
+
 func TestProcessAssetFacesOffFetchesNothing(t *testing.T) {
 	var facesCalls atomic.Int32
 	server := facesAssetServer([]model.PersonResponse{{ID: "p1", Name: "Alice"}}, nil, http.StatusOK, &facesCalls)

@@ -90,7 +90,7 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	}
 
 	changes := exif.CompareAssetMetadata(*asset, existing)
-	changes, err = appendFaceRegionChange(client, cfg, *asset, existing, changes)
+	changes, faceRegions, err := appendFaceRegionChange(client, cfg, *asset, existing, changes)
 	if err != nil {
 		return fail("fetch faces: %v", err)
 	}
@@ -161,6 +161,17 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	}
 	if !fresh.UpdatedAt.Equal(asset.UpdatedAt) {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset changed on the server while processing; re-run to pick up the latest metadata"}
+	}
+	// Face edits (renames, box moves, reassignments) do not bump updatedAt, so
+	// the regions get their own freshness check.
+	if wantsFaceRegions(cfg, *asset) {
+		stale, staleErr := faceRegionsStale(client, assetID, existing, faceRegions)
+		if staleErr != nil {
+			return fail("re-check faces before upload: %v", staleErr)
+		}
+		if stale {
+			return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "faces changed on the server while processing; re-run to pick up the latest state"}
+		}
 	}
 
 	var uploadOutcome UploadOutcome

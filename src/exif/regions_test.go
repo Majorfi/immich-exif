@@ -190,6 +190,84 @@ func TestCompareFaceRegionsCountMismatchRewrites(t *testing.T) {
 	}
 }
 
+func TestBuildFaceRegionsDropsExifEchoesWhenDetected(t *testing.T) {
+	echo := namedFace("Alice", 102, 52, 302, 252, 1000, 500)
+	echo.SourceType = "exif"
+	detected := namedFace("Alice", 100, 50, 300, 250, 1000, 500)
+	detected.SourceType = "machine-learning"
+
+	regions := BuildFaceRegions([]model.AssetFaceResponse{echo, detected}, 1)
+	if len(regions) != 1 {
+		t.Fatalf("the exif echo of a detected face must be dropped, got %d regions", len(regions))
+	}
+	if math.Abs(regions[0].X-0.2) > 1e-9 {
+		t.Fatalf("the detected box must win over the echo, got X=%f", regions[0].X)
+	}
+}
+
+func TestBuildFaceRegionsKeepsExifOnlyFaces(t *testing.T) {
+	imported := namedFace("Alice", 100, 50, 300, 250, 1000, 500)
+	imported.SourceType = "exif"
+
+	regions := BuildFaceRegions([]model.AssetFaceResponse{imported}, 1)
+	if len(regions) != 1 {
+		t.Fatalf("a person whose only face is exif-sourced must be kept, got %d regions", len(regions))
+	}
+}
+
+func TestBuildFaceRegionsKeepsMultipleDetectedFaces(t *testing.T) {
+	first := namedFace("Alice", 100, 50, 300, 250, 1000, 500)
+	first.SourceType = "machine-learning"
+	second := namedFace("Alice", 600, 50, 800, 250, 1000, 500)
+	second.SourceType = "machine-learning"
+
+	regions := BuildFaceRegions([]model.AssetFaceResponse{first, second}, 1)
+	if len(regions) != 2 {
+		t.Fatalf("two detected faces of the same person are both real, got %d regions", len(regions))
+	}
+}
+
+func TestFaceRegionsMatchWidensToleranceOnSmallImages(t *testing.T) {
+	desired := []FaceRegion{{Name: "Alice", X: 0.6166667, Y: 0.3, W: 0.2, H: 0.4}}
+	current := []FaceRegion{{Name: "Alice", X: 0.61771, Y: 0.3, W: 0.2, H: 0.4}}
+
+	if !FaceRegionsMatch(current, desired, 800, 600) {
+		t.Fatal("a one-pixel floor() shift on a 800px-wide image must stay within tolerance")
+	}
+	if FaceRegionsMatch(current, desired, 8000, 6000) {
+		t.Fatal("the same absolute shift on a large image is a real move and must mismatch")
+	}
+}
+
+func TestCompareFaceRegionsMarksGeometryOnlyChanges(t *testing.T) {
+	regions := []FaceRegion{{Name: "Alice", X: 0.5, Y: 0.3, W: 0.2, H: 0.4}}
+	existing := existingRegionInfo(regionEntry("Alice", 0.2, 0.3, 0.2, 0.4))
+
+	tc := CompareFaceRegions(regions, 4000, 2000, existing)
+	if tc == nil {
+		t.Fatal("expected a change")
+	}
+	if tc.Diffs[0].Old == tc.Diffs[0].New {
+		t.Fatalf("a geometry-only rewrite must not render an identical Old -> New, got %q -> %q", tc.Diffs[0].Old, tc.Diffs[0].New)
+	}
+	if !strings.Contains(tc.Diffs[0].New, "face boxes moved") {
+		t.Fatalf("expected the geometry marker, got %q", tc.Diffs[0].New)
+	}
+}
+
+func TestCompareFaceRegionsShowsUnnamedExistingRegions(t *testing.T) {
+	regions := []FaceRegion{{Name: "Alice", X: 0.2, Y: 0.3, W: 0.2, H: 0.4}}
+	existing := existingRegionInfo(regionEntry("", 0.7, 0.3, 0.1, 0.2))
+
+	tc := CompareFaceRegions(regions, 4000, 2000, existing)
+	if tc == nil {
+		t.Fatal("expected a change")
+	}
+	if tc.Diffs[0].Old != "(unnamed)" {
+		t.Fatalf("an unnamed existing region must be visible in the diff, got Old=%q", tc.Diffs[0].Old)
+	}
+}
+
 func TestEscapeStructValue(t *testing.T) {
 	got := escapeStructValue("Doe, J{r}=[x]|y")
 	want := "Doe|, J|{r|}|=|[x|]||y"
