@@ -34,17 +34,20 @@ const regionCoordTolerance = 0.001
 // person are dropped, mirroring what Immich itself imports.
 //
 // A face with sourceType "exif" is an echo of the file's own regions (the
-// server's metadata import). Counting echoes next to the same person's
-// detected faces makes the file trail the server forever: each replace
-// re-imports the written region and re-detects the face, growing the set by
-// one per run. Echoes are therefore dropped when the person also has a
-// non-exif face, and kept only as the person's sole source (server without
-// ML, regions imported from files).
+// server's metadata import). Counting echoes next to detected faces of the
+// same name makes the file trail the server forever: each replace re-imports
+// the written region and re-detects the face, growing the set by one per run.
+// Echoes are therefore dropped when a detected face carries the same name,
+// and kept only as a name's sole source (server without ML, regions imported
+// from files). The shield keys on the normalized name — not the person ID —
+// because that is how the importer links regions back to people: with two
+// person records sharing a name, the echo can land on the record recognition
+// did not pick.
 func BuildFaceRegions(faces []model.AssetFaceResponse, orientation int) []FaceRegion {
-	detectedPersonIDs := map[string]bool{}
+	detectedNames := map[string]bool{}
 	for _, face := range faces {
 		if face.Person != nil && face.SourceType != "exif" {
-			detectedPersonIDs[face.Person.ID] = true
+			detectedNames[normalizedRegionName(face.Person.Name)] = true
 		}
 	}
 
@@ -53,7 +56,7 @@ func BuildFaceRegions(faces []model.AssetFaceResponse, orientation int) []FaceRe
 		if face.Person == nil || face.Person.IsHidden {
 			continue
 		}
-		if face.SourceType == "exif" && detectedPersonIDs[face.Person.ID] {
+		if face.SourceType == "exif" && detectedNames[normalizedRegionName(face.Person.Name)] {
 			continue
 		}
 		name := strings.TrimSpace(face.Person.Name)
@@ -108,6 +111,12 @@ func rasterRegion(x, y, w, h float64, orientation int) (float64, float64, float6
 
 func clamp01(v float64) float64 {
 	return math.Min(1, math.Max(0, v))
+}
+
+// normalizedRegionName folds a person name the way Immich's importer does
+// when it resolves region names to people (trimmed, lowercased).
+func normalizedRegionName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
 }
 
 // CompareFaceRegions builds the change that replaces the file's XMP-mwg-rs

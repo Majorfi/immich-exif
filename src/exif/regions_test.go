@@ -191,17 +191,33 @@ func TestCompareFaceRegionsCountMismatchRewrites(t *testing.T) {
 }
 
 func TestBuildFaceRegionsDropsExifEchoesWhenDetected(t *testing.T) {
-	echo := namedFace("Alice", 102, 52, 302, 252, 1000, 500)
+	// The echo lands on a DIFFERENT person record with the same name: the
+	// importer resolves region names to people by name, so with split person
+	// records the echo and the detection do not share an ID.
+	echo := namedFace(" alice ", 102, 52, 302, 252, 1000, 500)
 	echo.SourceType = "exif"
+	echo.Person.ID = "p2"
 	detected := namedFace("Alice", 100, 50, 300, 250, 1000, 500)
 	detected.SourceType = "machine-learning"
 
 	regions := BuildFaceRegions([]model.AssetFaceResponse{echo, detected}, 1)
 	if len(regions) != 1 {
-		t.Fatalf("the exif echo of a detected face must be dropped, got %d regions", len(regions))
+		t.Fatalf("the exif echo of a detected name must be dropped, got %d regions", len(regions))
 	}
 	if math.Abs(regions[0].X-0.2) > 1e-9 {
 		t.Fatalf("the detected box must win over the echo, got X=%f", regions[0].X)
+	}
+}
+
+func TestBuildFaceRegionsKeepsExifFacesOfUndetectedNames(t *testing.T) {
+	imported := namedFace("Bob", 100, 50, 300, 250, 1000, 500)
+	imported.SourceType = "exif"
+	detected := namedFace("Alice", 600, 50, 800, 250, 1000, 500)
+	detected.SourceType = "machine-learning"
+
+	regions := BuildFaceRegions([]model.AssetFaceResponse{imported, detected}, 1)
+	if len(regions) != 2 {
+		t.Fatalf("an exif face whose name has no detection must be kept, got %d regions", len(regions))
 	}
 }
 
