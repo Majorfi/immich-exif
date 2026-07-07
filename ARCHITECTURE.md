@@ -19,6 +19,8 @@ The download itself is checksum-verified (Content-Length + SHA-1 against the ass
 
 Hidden videos are skipped entirely: they are almost always the motion half of a live photo, and replacing one would give it a new ID and permanently sever the still photo's `livePhotoVideoId` link.
 
+With `-faces`, the asset's face boxes are fetched from `GET /api/faces` (the v3 asset response no longer inlines them) and written as MWG regions (`XMP-mwg-rs:RegionInfo`). Immich's boxes are pixels on the orientation-corrected preview the ML pipeline analyzed; the file stores the unrotated image, so the coordinates are normalized and mapped back through the exact inverse of the orientation transform Immich's own metadata importer applies (`orientRegionInfo` in metadata.service.ts) — a written region re-imports to the same displayed box when the server's "import faces from metadata" setting is on. Only named, visible people are written (the importer ignores nameless regions anyway). A mismatching `RegionInfo` is replaced wholesale; when Immich has no named faces, the file's regions are left alone since "cleared" and "never recognized" are indistinguishable.
+
 External-library assets (`libraryId` set; null means internal) are skipped on replace runs: API uploads always land in the internal library, so a replacement would migrate the asset and duplicate it at the next library scan. Read-only modes (dry-run, export) still process them. The `libraryId` semantics hold on every server the client can address: the plural `/api/assets` routes and nullable `libraryId` both arrived in Immich 1.106. The practical floors are higher anyway — `/api/assets/copy` (used by every replace that yields a new ID) first appears around v2.2, and `/api/server/about` (auto-detection) in 1.113 — so a set `libraryId` reliably means external wherever the tool can operate.
 
 If the upload returns the same asset ID, copy/delete is skipped.
@@ -72,12 +74,14 @@ src/
     types.go          Data structures (Config, AssetResponse, ExifInfo, etc.)
     events.go         Event types and EventEmitter interface
     assetType.go      Asset classification (video detection, live-photo motion)
+    people.go         Person/face types, named-people helpers
     checksum.go       SHA-1 checksum decoding (base64/hex)
     helpers.go        ShortID, TruncateFilename, SanitizeForTerminal
 
   exif/
     tool.go           EXIF read and write (exiftool subprocess)
     compare.go        Metadata comparison, diff generation, exiftool arg building
+    regions.go        MWG face regions: orientation mapping, comparison, serialization
     compareDateTime.go Date/offset comparison, time-zone anchoring
     match.go          Value matching helpers (float, string, int, datetime, zones)
     video.go          Video-specific metadata comparison and routing
@@ -85,6 +89,7 @@ src/
   api/
     client.go         HTTP client base (transport, redirects, API version detection)
     assets.go         Asset CRUD (get, download, upload, copy, delete)
+    faces.go          Face boxes for one asset
     search.go         Search, list albums, paginated asset listing
 
   state/
@@ -92,6 +97,7 @@ src/
 
   process/
     pipeline.go       Per-asset processing orchestration
+    faces.go          Face-region change collection (-faces)
     worker.go         Worker pool with cancellation
     uploader.go       Upload interface and ModernUploader
     verify.go         Post-upload checksum verification
@@ -103,17 +109,18 @@ src/
 
 ## Immich API endpoints used
 
-| Method      | Endpoint                    | Purpose                                                        |
-| ----------- | --------------------------- | -------------------------------------------------------------- |
-| GET         | `/api/server/about`         | Server version detection (best-effort in forced modes)         |
-| GET         | `/api/assets/{id}`          | Fetch asset metadata and EXIF                                  |
-| GET         | `/api/assets/{id}/original` | Download original file                                         |
-| POST        | `/api/assets`               | Upload new asset (multipart)                                   |
-| PATCH / PUT | `/api/assets`               | Update asset visibility (PATCH on v3+, PUT on legacy)          |
+| Method      | Endpoint                    | Purpose                                                      |
+| ----------- | --------------------------- | ------------------------------------------------------------ |
+| GET         | `/api/server/about`         | Server version detection (best-effort in forced modes)       |
+| GET         | `/api/assets/{id}`          | Fetch asset metadata and EXIF                                |
+| GET         | `/api/assets/{id}/original` | Download original file                                       |
+| GET         | `/api/faces`                | Face boxes for one asset (only with `-faces`)                |
+| POST        | `/api/assets`               | Upload new asset (multipart)                                 |
+| PATCH / PUT | `/api/assets`               | Update asset visibility (PATCH on v3+, PUT on legacy)        |
 | PUT         | `/api/assets/copy`          | Copy associations between assets (no PATCH alias on v3)      |
-| DELETE      | `/api/assets`               | Batch delete assets (always `force=false`, trash)              |
-| POST        | `/api/search/metadata`      | Paginated asset listing + album enumeration (per visibility)   |
-| GET         | `/api/albums`               | List all albums                                                |
-| GET         | `/api/albums/{id}`          | Get album with asset list                                      |
+| DELETE      | `/api/assets`               | Batch delete assets (always `force=false`, trash)            |
+| POST        | `/api/search/metadata`      | Paginated asset listing + album enumeration (per visibility) |
+| GET         | `/api/albums`               | List all albums                                              |
+| GET         | `/api/albums/{id}`          | Get album with asset list                                    |
 
 All requests are authenticated via `x-api-key` header. v3 is the primary API contract: version detection assumes v3 when the reported version is unrecognizable, and `-immich-api legacy` forces the older contract. Redirects that leave the configured host (or downgrade https to http) are refused so the key cannot leak.

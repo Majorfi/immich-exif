@@ -21,11 +21,12 @@ type AssetSelectionStats struct {
 	StateSkipped              int
 }
 
-func (c *ImmichClient) searchAssetsPage(page, size int, albumIDs []string, withExif bool, visibility string) (*model.SearchAssets, error) {
+func (c *ImmichClient) searchAssetsPage(page, size int, albumIDs []string, withExif, withPeople bool, visibility string) (*model.SearchAssets, error) {
 	body := model.SearchMetadataRequest{
 		Page:       page,
 		Size:       size,
 		WithExif:   withExif,
+		WithPeople: withPeople,
 		AlbumIDs:   albumIDs,
 		Visibility: visibility,
 	}
@@ -48,12 +49,12 @@ func (c *ImmichClient) searchAssetsPage(page, size int, albumIDs []string, withE
 	return &resp.Assets, nil
 }
 
-func (c *ImmichClient) forEachSearchPage(albumIDs []string, withExif bool, visibility string, handle func([]model.AssetResponse)) error {
+func (c *ImmichClient) forEachSearchPage(albumIDs []string, withExif, withPeople bool, visibility string, handle func([]model.AssetResponse)) error {
 	page := 1
 	pageSize := 1000
 
 	for {
-		result, err := c.searchAssetsPage(page, pageSize, albumIDs, withExif, visibility)
+		result, err := c.searchAssetsPage(page, pageSize, albumIDs, withExif, withPeople, visibility)
 		if err != nil {
 			return fmt.Errorf("search page %d: %w", page, err)
 		}
@@ -79,8 +80,10 @@ func (c *ImmichClient) forEachSearchPage(albumIDs []string, withExif bool, visib
 // ListAllAssetIDs pages every asset and returns the IDs worth processing.
 // skipExternalLibrary must be true when the run replaces assets: uploading an
 // external-library asset would migrate it into the internal library, so those
-// are only eligible for the read-only modes (dry-run, export).
-func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool, skipExternalLibrary bool) ([]string, AssetSelectionStats, error) {
+// are only eligible for the read-only modes (dry-run, export). withFaces
+// makes the search return people so an asset whose only writable metadata is
+// its named faces survives the pre-filter.
+func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool, skipExternalLibrary, withFaces bool) ([]string, AssetSelectionStats, error) {
 	var allIDs []string
 	stats := AssetSelectionStats{}
 	seen := map[string]bool{}
@@ -103,7 +106,7 @@ func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool
 				stats.UnsupportedVideoSkipped++
 				continue
 			}
-			if !exif.HasAssetMetadataToEmbed(asset) {
+			if !exif.HasAssetMetadataToEmbed(asset) && !(withFaces && model.HasFaceRegionsToEmbed(asset)) {
 				stats.NoWritableMetadataSkipped++
 				continue
 			}
@@ -118,7 +121,7 @@ func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool
 	// search/metadata filters by a single visibility, so enumerate them to cover
 	// archived and hidden assets, not just the timeline default.
 	for _, visibility := range c.searchVisibilityValues() {
-		if err := c.forEachSearchPage(nil, true, visibility, handle); err != nil {
+		if err := c.forEachSearchPage(nil, true, withFaces, visibility, handle); err != nil {
 			return nil, AssetSelectionStats{}, err
 		}
 	}
@@ -225,7 +228,7 @@ func (c *ImmichClient) searchAlbumAssetIDs(albumID string) ([]string, error) {
 	seen := map[string]bool{}
 
 	for _, visibility := range c.searchVisibilityValues() {
-		err := c.forEachSearchPage([]string{albumID}, false, visibility, func(items []model.AssetResponse) {
+		err := c.forEachSearchPage([]string{albumID}, false, false, visibility, func(items []model.AssetResponse) {
 			for _, asset := range items {
 				if seen[asset.ID] {
 					continue

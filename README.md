@@ -2,7 +2,7 @@
 
 A CLI tool that synchronizes metadata from an [Immich](https://immich.app) photo server back into the original files.
 
-Immich stores rich metadata (GPS, descriptions, ratings, camera info, dates) in its database, but this metadata isn't always embedded in the file itself. This tool bridges that gap by downloading each asset, embedding the missing tags via `exiftool`, and re-uploading the modified file.
+Immich stores rich metadata (GPS, descriptions, ratings, camera info, dates, named people) in its database, but this metadata isn't always embedded in the file itself. This tool bridges that gap by downloading each asset, embedding the missing tags via `exiftool`, and re-uploading the modified file.
 
 ## How it works
 
@@ -32,6 +32,7 @@ The destructive path is the careful path. By default the tool will not delete an
 - **Live photos stay paired** — the still's `livePhotoVideoId` is forwarded on re-upload, and hidden videos (live-photo motion parts) are skipped rather than replaced, which would sever the pair.
 - **Mid-run edits are respected** — the asset is re-checked right before upload; if its metadata changed on the server while the tool was working, it is skipped instead of overwritten.
 - **External libraries are protected** — replacing an external-library asset would migrate a copy into Immich's internal library (and duplicate it at the next scan), so those assets are skipped on replace runs. `-dry-run` and `-export-dir` still cover them.
+- **Face regions are opt-in** — `-faces` replaces the file's `XMP-mwg-rs` region structure with Immich's named people; without the flag, region metadata is never touched.
 - **Trash disabled on the server?** The tool warns you loudly: without the trash feature there is no recovery window.
 - **`-dry-run`** writes nothing and shows every change first.
 - The API key is refused over plaintext `http://` unless you pass `-allow-http`.
@@ -51,6 +52,7 @@ An interruption (Ctrl-C) or a failed step leaves a duplicate, never a hole: the 
 | I want to export all albums                                 | `immich-exif -y -export-dir ./export -album all`        |
 | I want duplicates auto-resolved                             | `immich-exif -y -resolve-duplicate -album <album-id>`   |
 | I want to ignore cache and re-check everything              | `immich-exif -y -force -all`                            |
+| I want named people written as face regions too             | `immich-exif -y -faces -all`                            |
 
 When using `-export-dir` with exactly one `-album`, files are exported to `/<export-dir>/<album-id>/`.
 With `-export-dir` and `-all` or `-album all`, exported assets are mirrored per album folder (`/<export-dir>/<album-id>/...`), including shared assets in each album folder. Assets with no album go to `/<export-dir>/no-album/` by default and can be omitted with `-include-no-album=false`.
@@ -115,16 +117,16 @@ IMMICH_API_KEY=your-api-key
 
 On Immich 1.113+ you can scope the API key to exactly what the tool needs (older servers issue all-or-nothing keys). A normal run that re-uploads and replaces assets uses:
 
-| Permission       | Why                                                       |
-| ---------------- | --------------------------------------------------------- |
+| Permission       | Why                                                             |
+| ---------------- | --------------------------------------------------------------- |
 | `server.about`   | Server-version detection (optional with a forced `-immich-api`) |
-| `asset.read`     | Read asset metadata and page the library and albums       |
-| `asset.download` | Download the original file                                |
-| `asset.upload`   | Re-upload the metadata-corrected file                     |
-| `asset.copy`     | Copy associations (albums, favorites, …) to the new asset |
-| `asset.update`   | Restore visibility for archived or hidden assets          |
-| `asset.delete`   | Trash the old original after a verified replacement       |
-| `album.read`     | Resolve `-album` / `-album all` selections                |
+| `asset.read`     | Read asset metadata and page the library and albums             |
+| `asset.download` | Download the original file                                      |
+| `asset.upload`   | Re-upload the metadata-corrected file                           |
+| `asset.copy`     | Copy associations (albums, favorites, …) to the new asset       |
+| `asset.update`   | Restore visibility for archived or hidden assets                |
+| `asset.delete`   | Trash the old original after a verified replacement             |
+| `album.read`     | Resolve `-album` / `-album all` selections                      |
 
 Read-only modes need less: `-dry-run` and `-export-dir` never write to the server, so they only require `server.about`, `asset.read`, `asset.download`, and `album.read` (drop `album.read` too if you only pass asset IDs).
 
@@ -136,24 +138,25 @@ immich-exif [flags] [asset-ids...]
 
 ### Flags
 
-| Flag                 | Default           | Description                                                                                                     |
-| -------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------- |
-| `-url`               | `$IMMICH_URL`     | Immich server URL                                                                                               |
-| `-api-key`           | `$IMMICH_API_KEY` | API key                                                                                                         |
-| `-immich-api`        | `auto`            | API contract: `auto` (detect; assumes `v3` when unsure), `v3`, or `legacy`                                      |
-| `-workers`           | `1`               | Number of parallel workers                                                                                      |
-| `-dry-run`           | `false`           | Embed EXIF locally but skip re-upload                                                                           |
-| `-export-dir`        |                   | Save modified files to a directory instead of re-uploading (fails if file exists)                               |
-| `-y`                 | `false`           | Auto-confirm all changes                                                                                        |
-| `-no-verify-upload`  | `false`           | Skip the post-upload checksum verification that gates the replacement                                           |
-| `-allow-http`        | `false`           | Allow a plaintext `http://` server URL (the API key is sent in clear text)                                      |
-| `-list-albums`       | `false`           | List your albums (ID and name) and exit                                                                         |
-| `-resolve-duplicate` | `false`           | On duplicate upload status, copy associations to the duplicate asset and trash the old one                      |
-| `-include-no-album`  | `true`            | With album-mirrored export, include assets with no album under `no-album/`                                      |
-| `-all`               | `false`           | Select the all-assets mode (timeline, archived and hidden; external-library assets only on read-only runs)      |
-| `-force`             | `false`           | Ignore the state cache and re-process (only valid with `-all` / `-album all`)                                   |
-| `-album`             |                   | Album ID to process (repeatable), or `all` as an alias of `-all`                                                |
-| `-version`           | `false`           | Print the version and exit                                                                                      |
+| Flag                 | Default           | Description                                                                                                |
+| -------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------- |
+| `-url`               | `$IMMICH_URL`     | Immich server URL                                                                                          |
+| `-api-key`           | `$IMMICH_API_KEY` | API key                                                                                                    |
+| `-immich-api`        | `auto`            | API contract: `auto` (detect; assumes `v3` when unsure), `v3`, or `legacy`                                 |
+| `-workers`           | `1`               | Number of parallel workers                                                                                 |
+| `-dry-run`           | `false`           | Embed EXIF locally but skip re-upload                                                                      |
+| `-export-dir`        |                   | Save modified files to a directory instead of re-uploading (fails if file exists)                          |
+| `-y`                 | `false`           | Auto-confirm all changes                                                                                   |
+| `-no-verify-upload`  | `false`           | Skip the post-upload checksum verification that gates the replacement                                      |
+| `-allow-http`        | `false`           | Allow a plaintext `http://` server URL (the API key is sent in clear text)                                 |
+| `-list-albums`       | `false`           | List your albums (ID and name) and exit                                                                    |
+| `-resolve-duplicate` | `false`           | On duplicate upload status, copy associations to the duplicate asset and trash the old one                 |
+| `-include-no-album`  | `true`            | With album-mirrored export, include assets with no album under `no-album/`                                 |
+| `-all`               | `false`           | Select the all-assets mode (timeline, archived and hidden; external-library assets only on read-only runs) |
+| `-force`             | `false`           | Ignore the state cache and re-process (only valid with `-all` / `-album all`)                              |
+| `-faces`             | `false`           | Also write named Immich people as MWG face regions (`XMP-mwg-rs`), readable by digiKam and others          |
+| `-album`             |                   | Album ID to process (repeatable), or `all` as an alias of `-all`                                           |
+| `-version`           | `false`           | Print the version and exit                                                                                 |
 
 ### Asset selection
 
@@ -239,6 +242,16 @@ Images use the full tag set below. Supported video containers (`mp4`, `mov`, `m4
 | Location    | `IPTC:City`, `XMP-photoshop:City`, `IPTC:Province-State`, `XMP-photoshop:State`, `IPTC:Country-PrimaryLocationName`, `XMP-photoshop:Country` | Dual IPTC + XMP-photoshop                                                                                |
 | DateTime    | `DateTimeOriginal`, `OffsetTimeOriginal`, `TimeZoneOffset`, `XMP-exif:DateTimeOriginal`, `XMP-xmp:CreateDate`                                | See below; XMP uses ISO 8601                                                                             |
 | Camera      | `Make`, `Model`, `LensModel`                                                                                                                 | Only written if file has no existing value                                                               |
+| Faces       | `XMP-mwg-rs:RegionInfo` (MWG face regions)                                                                                                   | Opt-in via `-faces`; images only, named people only; see below                                           |
+
+### Face regions (`-faces`)
+
+With `-faces`, every person you have **named** in Immich is written into the file as an MWG face region (`XMP-mwg-rs:RegionInfo`) — the standard read by digiKam, XnView and others. Details worth knowing:
+
+- Only **named, visible** people are written. Unnamed ML clusters and people you hid in Immich are left out — the same rule Immich applies when importing regions from files.
+- Regions are written in the stored image's coordinate space, applying the exact inverse of the orientation transform Immich uses on import, so rotated photos round-trip correctly.
+- When the file's regions disagree with Immich, the whole `RegionInfo` structure is **replaced** — Immich is the source of truth, like for every other synced tag. When Immich has no named faces for an asset, existing file regions are left untouched (never cleared).
+- Round-trip bonus: with Immich's _"Import faces from metadata"_ server setting enabled, the names embedded by `-faces` are re-imported when the replaced file is scanned — face names survive the replace.
 
 ### DateTime and timezone handling
 

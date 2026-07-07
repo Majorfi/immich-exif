@@ -3,22 +3,23 @@ package model
 import "time"
 
 type AssetResponse struct {
-	ID               string    `json:"id"`
-	DeviceAssetID    string    `json:"deviceAssetId"`
-	DeviceID         string    `json:"deviceId"`
-	OriginalFileName string    `json:"originalFileName"`
-	OriginalMimeType string    `json:"originalMimeType"`
-	Checksum         string    `json:"checksum"`
-	FileCreatedAt    time.Time `json:"fileCreatedAt"`
-	FileModifiedAt   time.Time `json:"fileModifiedAt"`
-	UpdatedAt        time.Time `json:"updatedAt"`
-	IsFavorite       bool      `json:"isFavorite"`
-	IsArchived       bool      `json:"isArchived"`
-	IsTrashed        bool      `json:"isTrashed"`
-	Visibility       string    `json:"visibility"`
-	LivePhotoVideoID string    `json:"livePhotoVideoId"`
-	LibraryID        string    `json:"libraryId"`
-	ExifInfo         *ExifInfo `json:"exifInfo"`
+	ID               string           `json:"id"`
+	DeviceAssetID    string           `json:"deviceAssetId"`
+	DeviceID         string           `json:"deviceId"`
+	OriginalFileName string           `json:"originalFileName"`
+	OriginalMimeType string           `json:"originalMimeType"`
+	Checksum         string           `json:"checksum"`
+	FileCreatedAt    time.Time        `json:"fileCreatedAt"`
+	FileModifiedAt   time.Time        `json:"fileModifiedAt"`
+	UpdatedAt        time.Time        `json:"updatedAt"`
+	IsFavorite       bool             `json:"isFavorite"`
+	IsArchived       bool             `json:"isArchived"`
+	IsTrashed        bool             `json:"isTrashed"`
+	Visibility       string           `json:"visibility"`
+	LivePhotoVideoID string           `json:"livePhotoVideoId"`
+	LibraryID        string           `json:"libraryId"`
+	ExifInfo         *ExifInfo        `json:"exifInfo"`
+	People           []PersonResponse `json:"people"`
 }
 
 type ExifInfo struct {
@@ -40,6 +41,7 @@ type SearchMetadataRequest struct {
 	Page       int      `json:"page"`
 	Size       int      `json:"size"`
 	WithExif   bool     `json:"withExif"`
+	WithPeople bool     `json:"withPeople,omitempty"`
 	AlbumIDs   []string `json:"albumIds,omitempty"`
 	Visibility string   `json:"visibility,omitempty"`
 }
@@ -139,6 +141,7 @@ type Config struct {
 	ExportDir    string
 	Yes          bool
 	VerifyUpload bool
+	Faces        bool
 
 	ListAlbums            bool
 	ResolveDuplicate      bool

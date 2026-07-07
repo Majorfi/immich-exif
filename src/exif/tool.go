@@ -28,7 +28,8 @@ func ReadExifTags(filePath string) (ExifTagMap, error) {
 	}
 
 	supplementalTags, err := readExifTagsWithArgs(filePath, []string{
-		"-json", "-n", "-a", "-G1",
+		"-json", "-n", "-a", "-G1", "-struct",
+		"-XMP-mwg-rs:RegionInfo",
 		"-IPTC:City",
 		"-XMP-photoshop:City",
 		"-IPTC:Province-State",

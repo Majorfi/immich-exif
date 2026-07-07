@@ -141,12 +141,16 @@ func (s *StateDB) Save(assetID, status, exifSnapshot string) error {
 type assetSnapshot struct {
 	ExifInfo       *model.ExifInfo `json:"exifInfo"`
 	FileModifiedAt time.Time       `json:"fileModifiedAt"`
+	// omitempty keeps runs without people data on the hashes they had before
+	// face support existed; only -faces runs populate this.
+	PeopleNames []string `json:"peopleNames,omitempty"`
 }
 
 func SnapshotAsset(asset model.AssetResponse) (string, error) {
 	snap := assetSnapshot{
 		ExifInfo:       asset.ExifInfo,
 		FileModifiedAt: asset.FileModifiedAt,
+		PeopleNames:    model.NamedPeopleNames(asset),
 	}
 	data, err := json.Marshal(snap)
 	if err != nil {

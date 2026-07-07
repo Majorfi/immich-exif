@@ -57,7 +57,7 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	if model.IsUnsupportedVideoAsset(*asset) {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "unsupported video container for metadata embedding"}
 	}
-	if len(exif.CollectExifArgs(exif.CompareAssetMetadata(*asset, nil))) == 0 {
+	if len(exif.CollectExifArgs(exif.CompareAssetMetadata(*asset, nil))) == 0 && !wantsFaceRegions(cfg, *asset) {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "no metadata to embed"}
 	}
 	if strings.TrimSpace(asset.Checksum) == "" {
@@ -90,6 +90,10 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	}
 
 	changes := exif.CompareAssetMetadata(*asset, existing)
+	changes, err = appendFaceRegionChange(client, cfg, *asset, existing, changes)
+	if err != nil {
+		return fail("fetch faces: %v", err)
+	}
 	exifArgs := exif.CollectExifArgs(changes)
 	if len(exifArgs) == 0 {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "metadata already matches", ExifMatched: true}
