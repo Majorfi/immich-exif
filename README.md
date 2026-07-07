@@ -31,6 +31,7 @@ The destructive path is the careful path. By default the tool will not delete an
 - **Trash, never permanent delete** — the replaced original always goes to Immich's **trash**, where it stays recoverable. Checksum verification proves the transfer was intact, not that exiftool produced a valid file, so the trash window is kept as the last-resort recovery path.
 - **Live photos stay paired** — the still's `livePhotoVideoId` is forwarded on re-upload, and hidden videos (live-photo motion parts) are skipped rather than replaced, which would sever the pair.
 - **Mid-run edits are respected** — the asset is re-checked right before upload; if its metadata changed on the server while the tool was working, it is skipped instead of overwritten.
+- **External libraries are protected** — replacing an external-library asset would migrate a copy into Immich's internal library (and duplicate it at the next scan), so those assets are skipped on replace runs. `-dry-run` and `-export-dir` still cover them.
 - **Trash disabled on the server?** The tool warns you loudly: without the trash feature there is no recovery window.
 - **`-dry-run`** writes nothing and shows every change first.
 - The API key is refused over plaintext `http://` unless you pass `-allow-http`.
@@ -149,7 +150,7 @@ immich-exif [flags] [asset-ids...]
 | `-list-albums`       | `false`           | List your albums (ID and name) and exit                                                                         |
 | `-resolve-duplicate` | `false`           | On duplicate upload status, copy associations to the duplicate asset and trash the old one                      |
 | `-include-no-album`  | `true`            | With album-mirrored export, include assets with no album under `no-album/`                                      |
-| `-all`               | `false`           | Select the all-assets mode (timeline, archived and hidden); equivalent to `-album all`                          |
+| `-all`               | `false`           | Select the all-assets mode (timeline, archived and hidden; external-library assets only on read-only runs)      |
 | `-force`             | `false`           | Ignore the state cache and re-process (only valid with `-all` / `-album all`)                                   |
 | `-album`             |                   | Album ID to process (repeatable), or `all` as an alias of `-all`                                                |
 | `-version`           | `false`           | Print the version and exit                                                                                      |

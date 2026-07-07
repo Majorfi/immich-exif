@@ -17,6 +17,7 @@ type AssetResponse struct {
 	IsTrashed        bool      `json:"isTrashed"`
 	Visibility       string    `json:"visibility"`
 	LivePhotoVideoID string    `json:"livePhotoVideoId"`
+	LibraryID        string    `json:"libraryId"`
 	ExifInfo         *ExifInfo `json:"exifInfo"`
 }
 

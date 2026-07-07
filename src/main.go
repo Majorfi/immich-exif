@@ -130,6 +130,9 @@ func run() int {
 	if stats.LivePhotoMotionSkipped > 0 {
 		fmt.Printf("Pre-filtered %d hidden videos (likely live-photo motion parts)\n", stats.LivePhotoMotionSkipped)
 	}
+	if stats.ExternalLibrarySkipped > 0 {
+		fmt.Printf("Pre-filtered %d external-library assets (replace would migrate them; dry-run and export still cover them)\n", stats.ExternalLibrarySkipped)
+	}
 	if stats.StateSkipped > 0 {
 		fmt.Printf("Skipped %d assets with unchanged metadata\n", stats.StateSkipped)
 	}
@@ -260,7 +263,8 @@ func resolveAssetIDs(client *api.ImmichClient, cfg *model.Config, shouldSkip fun
 	stats := api.AssetSelectionStats{}
 
 	if cfg.All {
-		ids, allStats, err := client.ListAllAssetIDs(shouldSkip)
+		skipExternalLibrary := !cfg.DryRun && cfg.ExportDir == ""
+		ids, allStats, err := client.ListAllAssetIDs(shouldSkip, skipExternalLibrary)
 		if err != nil {
 			return nil, api.AssetSelectionStats{}, fmt.Errorf("list all assets: %w", err)
 		}
@@ -268,6 +272,7 @@ func resolveAssetIDs(client *api.ImmichClient, cfg *model.Config, shouldSkip fun
 		stats.NoWritableMetadataSkipped += allStats.NoWritableMetadataSkipped
 		stats.UnsupportedVideoSkipped += allStats.UnsupportedVideoSkipped
 		stats.LivePhotoMotionSkipped += allStats.LivePhotoMotionSkipped
+		stats.ExternalLibrarySkipped += allStats.ExternalLibrarySkipped
 		stats.StateSkipped += allStats.StateSkipped
 	}
 

@@ -189,3 +189,77 @@ func TestProcessAssetSkipsTrashedOriginal(t *testing.T) {
 		t.Fatalf("expected trash skip message, got: %s", result.Message)
 	}
 }
+
+// Replacing an external-library asset would migrate it into the internal
+// library and duplicate it at the next scan; only read-only modes may touch it.
+func TestProcessAssetSkipsExternalLibraryAssetOnReplace(t *testing.T) {
+	server := externalLibraryAssetServer()
+	defer server.Close()
+
+	client := api.NewImmichClient(server.URL, "key")
+	result := ProcessAsset(client, nil, &model.Config{}, "asset-1", 1, 1, &noopEmitter{}, nil)
+	if result.Status != model.StatusSkipped {
+		t.Fatalf("expected skipped, got %s: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "external library") {
+		t.Fatalf("expected external-library skip message, got: %s", result.Message)
+	}
+}
+
+func TestProcessAssetAllowsExternalLibraryAssetInDryRun(t *testing.T) {
+	server := externalLibraryAssetServer()
+	defer server.Close()
+
+	defer withMockExiftool(
+		func(string) (exif.ExifTagMap, error) { return exif.ExifTagMap{}, nil },
+		func(string, []string) error { return nil },
+	)()
+
+	client := api.NewImmichClient(server.URL, "key")
+	result := ProcessAsset(client, nil, &model.Config{DryRun: true}, "asset-1", 1, 1, &noopEmitter{}, nil)
+	if result.Status != model.StatusSuccess {
+		t.Fatalf("expected dry-run success, got %s: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "dry-run") {
+		t.Fatalf("expected dry-run message, got: %s", result.Message)
+	}
+}
+
+func TestProcessAssetAllowsExternalLibraryAssetInExport(t *testing.T) {
+	server := externalLibraryAssetServer()
+	defer server.Close()
+
+	defer withMockExiftool(
+		func(string) (exif.ExifTagMap, error) { return exif.ExifTagMap{}, nil },
+		func(string, []string) error { return nil },
+	)()
+
+	client := api.NewImmichClient(server.URL, "key")
+	cfg := &model.Config{ExportDir: t.TempDir()}
+	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{}, nil)
+	if result.Status != model.StatusSuccess {
+		t.Fatalf("expected export success, got %s: %s", result.Status, result.Message)
+	}
+	if !strings.Contains(result.Message, "exported to") {
+		t.Fatalf("expected export message, got: %s", result.Message)
+	}
+}
+
+func externalLibraryAssetServer() *httptest.Server {
+	desc := "Test Description"
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/original") {
+			w.Write([]byte("fake-image-data"))
+			return
+		}
+		asset := model.AssetResponse{
+			ID:               "asset-1",
+			OriginalFileName: "photo.jpg",
+			LibraryID:        "5b9f1a2e-1111-4222-8333-444455556666",
+			Checksum:         sha1HexOf("fake-image-data"),
+			ExifInfo:         &model.ExifInfo{Description: &desc},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(asset)
+	}))
+}

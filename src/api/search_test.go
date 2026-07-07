@@ -158,7 +158,7 @@ func TestListAllAssetIDsPaginates(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	ids, stats, err := c.ListAllAssetIDs(nil)
+	ids, stats, err := c.ListAllAssetIDs(nil, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestListAllAssetIDsEnumeratesVisibilities(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	ids, _, err := c.ListAllAssetIDs(nil)
+	ids, _, err := c.ListAllAssetIDs(nil, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestListAllAssetIDsDetectsInvalidNextPage(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	_, _, err := c.ListAllAssetIDs(nil)
+	_, _, err := c.ListAllAssetIDs(nil, true)
 	if err == nil {
 		t.Fatal("expected error for non-advancing nextPage")
 	}
@@ -531,7 +531,7 @@ func TestListAllAssetIDsPreFiltersNoMetadata(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	ids, stats, err := c.ListAllAssetIDs(nil)
+	ids, stats, err := c.ListAllAssetIDs(nil, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -569,7 +569,7 @@ func TestListAllAssetIDsReturnsErrorOnSearchFailure(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	_, _, err := c.ListAllAssetIDs(nil)
+	_, _, err := c.ListAllAssetIDs(nil, true)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -591,7 +591,7 @@ func TestListAllAssetIDsReturnsErrorOnInvalidNextPageToken(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	_, _, err := c.ListAllAssetIDs(nil)
+	_, _, err := c.ListAllAssetIDs(nil, true)
 	if err == nil {
 		t.Fatal("expected error for invalid nextPage token")
 	}
@@ -620,7 +620,7 @@ func TestListAllAssetIDsWithShouldSkip(t *testing.T) {
 		return asset.ID == "a2"
 	}
 
-	ids, stats, err := c.ListAllAssetIDs(shouldSkip)
+	ids, stats, err := c.ListAllAssetIDs(shouldSkip, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -660,7 +660,7 @@ func TestListAllAssetIDsIncludesVideoAssets(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	ids, stats, err := c.ListAllAssetIDs(nil)
+	ids, stats, err := c.ListAllAssetIDs(nil, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -700,7 +700,7 @@ func TestListAllAssetIDsSkipsUnsupportedVideoContainers(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	ids, stats, err := c.ListAllAssetIDs(nil)
+	ids, stats, err := c.ListAllAssetIDs(nil, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -778,7 +778,7 @@ func TestListAllAssetIDsSingleScanOnPreVisibilityServer(t *testing.T) {
 		t.Fatalf("resolve api mode: %v", err)
 	}
 
-	ids, _, err := c.ListAllAssetIDs(nil)
+	ids, _, err := c.ListAllAssetIDs(nil, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -816,7 +816,7 @@ func TestListAllAssetIDsSkipsLivePhotoMotionCandidates(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	ids, stats, err := c.ListAllAssetIDs(nil)
+	ids, stats, err := c.ListAllAssetIDs(nil, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -825,5 +825,51 @@ func TestListAllAssetIDsSkipsLivePhotoMotionCandidates(t *testing.T) {
 	}
 	if stats.LivePhotoMotionSkipped != 1 {
 		t.Fatalf("expected 1 live-photo motion skip, got %d", stats.LivePhotoMotionSkipped)
+	}
+}
+
+// With skipExternalLibrary set (replace runs), external-library assets are
+// pre-filtered and counted; read-only runs keep them in the selection.
+func TestListAllAssetIDsExternalLibraryGate(t *testing.T) {
+	desc := "d"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body model.SearchMetadataRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		items := []model.AssetResponse{}
+		if body.Visibility == "timeline" {
+			items = append(items,
+				model.AssetResponse{ID: "internal-1", ExifInfo: &model.ExifInfo{Description: &desc}},
+				model.AssetResponse{ID: "external-1", LibraryID: "5b9f1a2e-1111-4222-8333-444455556666", ExifInfo: &model.ExifInfo{Description: &desc}},
+			)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(model.SearchMetadataResponse{Assets: model.SearchAssets{Items: items}})
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "key")
+
+	ids, stats, err := c.ListAllAssetIDs(nil, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "internal-1" {
+		t.Fatalf("expected only the internal asset on a replace run, got %v", ids)
+	}
+	if stats.ExternalLibrarySkipped != 1 {
+		t.Fatalf("expected 1 external-library skip, got %d", stats.ExternalLibrarySkipped)
+	}
+
+	ids, stats, err = c.ListAllAssetIDs(nil, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("expected both assets on a read-only run, got %v", ids)
+	}
+	if stats.ExternalLibrarySkipped != 0 {
+		t.Fatalf("expected no external-library skips on a read-only run, got %d", stats.ExternalLibrarySkipped)
 	}
 }
