@@ -19,7 +19,7 @@ The download itself is checksum-verified (Content-Length + SHA-1 against the ass
 
 Hidden videos are skipped entirely: they are almost always the motion half of a live photo, and replacing one would give it a new ID and permanently sever the still photo's `livePhotoVideoId` link.
 
-External-library assets (`libraryId` set; null means internal) are skipped on replace runs: API uploads always land in the internal library, so a replacement would migrate the asset and duplicate it at the next library scan. Read-only modes (dry-run, export) still process them. The `libraryId` semantics hold on every server the client can address: the plural `/api/assets` routes and nullable `libraryId` both arrived in Immich 1.106, which makes 1.106 the tool's minimum server version.
+External-library assets (`libraryId` set; null means internal) are skipped on replace runs: API uploads always land in the internal library, so a replacement would migrate the asset and duplicate it at the next library scan. Read-only modes (dry-run, export) still process them. The `libraryId` semantics hold on every server the client can address: the plural `/api/assets` routes and nullable `libraryId` both arrived in Immich 1.106. The practical floors are higher anyway — `/api/assets/copy` (used by every replace that yields a new ID) first appears around v2.2, and `/api/server/about` (auto-detection) in 1.113 — so a set `libraryId` reliably means external wherever the tool can operate.
 
 If the upload returns the same asset ID, copy/delete is skipped.
 
