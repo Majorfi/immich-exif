@@ -20,6 +20,11 @@ const apiV3MajorVersion = 3
 // `visibility` filter on search/metadata (the asset-visibility refactor).
 const searchVisibilityMinorVersion = 133
 
+// libraryIDNullableMinorVersion is the 1.x minor that made libraryId nullable
+// (null = internal upload). Before it, EVERY asset carried the per-user
+// upload-library ID, so libraryId cannot distinguish external assets there.
+const libraryIDNullableMinorVersion = 106
+
 const maxErrorBodyBytes = 8 * 1024
 
 type ImmichClient struct {
@@ -30,6 +35,17 @@ type ImmichClient struct {
 	// searchVisibilityUnsupported is set when the server predates the
 	// `visibility` search filter; those servers silently strip the field.
 	searchVisibilityUnsupported bool
+	// libraryIDUnreliable is set when the server predates nullable libraryId;
+	// there the field is present on internal uploads too, so it cannot be used
+	// to detect external-library assets.
+	libraryIDUnreliable bool
+}
+
+// CanDetectExternalLibrary reports whether a non-null libraryId reliably
+// identifies an external-library asset on this server (Immich 1.106+; assumed
+// true when the version is unknown, matching the v3-primary default).
+func (c *ImmichClient) CanDetectExternalLibrary() bool {
+	return !c.libraryIDUnreliable
 }
 
 func NewImmichClient(baseURL, apiKey string) *ImmichClient {
@@ -166,6 +182,7 @@ func (c *ImmichClient) applyServerVersion(version string) {
 		return
 	}
 	c.searchVisibilityUnsupported = major < 1 || (major == 1 && minor < searchVisibilityMinorVersion)
+	c.libraryIDUnreliable = major < 1 || (major == 1 && minor < libraryIDNullableMinorVersion)
 }
 
 // isV3Version reports whether the server speaks the v3 API contract. v3 is the

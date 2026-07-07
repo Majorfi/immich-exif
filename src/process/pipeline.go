@@ -16,12 +16,6 @@ import (
 
 var sleepFn = time.Sleep
 
-// willReplace reports whether this run mutates server assets; dry-run and
-// export are read-only.
-func willReplace(cfg *model.Config) bool {
-	return !cfg.DryRun && cfg.ExportDir == ""
-}
-
 func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config, assetID string, index, total int, emitter model.EventEmitter, cancelled func() bool) model.ProcessResult {
 	fail := func(msg string, args ...any) model.ProcessResult {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusFailed, Message: fmt.Sprintf("[%s] %s", model.ShortID(assetID), fmt.Sprintf(msg, args...))}
@@ -51,8 +45,9 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	}
 	// Replacing an external-library asset would migrate a copy into the
 	// internal library and duplicate it at the next scan; read-only modes
-	// (dry-run, export) are safe. libraryId is null for internal uploads.
-	if asset.LibraryID != "" && willReplace(cfg) {
+	// (dry-run, export) are safe. libraryId means external only on servers
+	// where it is nullable (1.106+) — before that every asset carried one.
+	if cfg.WillReplace() && client.CanDetectExternalLibrary() && asset.LibraryID != "" {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset belongs to an external library; replacing it would migrate it into the internal library (dry-run and export still work)"}
 	}
 	if model.IsLivePhotoMotionCandidate(*asset) {

@@ -91,7 +91,7 @@ func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool
 				continue
 			}
 			seen[asset.ID] = true
-			if skipExternalLibrary && asset.LibraryID != "" {
+			if skipExternalLibrary && c.CanDetectExternalLibrary() && asset.LibraryID != "" {
 				stats.ExternalLibrarySkipped++
 				continue
 			}

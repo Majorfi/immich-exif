@@ -873,3 +873,38 @@ func TestListAllAssetIDsExternalLibraryGate(t *testing.T) {
 		t.Fatalf("expected no external-library skips on a read-only run, got %d", stats.ExternalLibrarySkipped)
 	}
 }
+
+// Before Immich 1.106 libraryId was set on EVERY asset (the per-user upload
+// library), so it cannot identify external assets there: the gate must stand
+// down instead of skipping the whole library on replace runs.
+func TestListAllAssetIDsIgnoresLibraryIDOnPre106Server(t *testing.T) {
+	desc := "d"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/server/about" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"version":"1.105.1"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(model.SearchMetadataResponse{Assets: model.SearchAssets{Items: []model.AssetResponse{
+			{ID: "a1", LibraryID: "5b9f1a2e-1111-4222-8333-444455556666", ExifInfo: &model.ExifInfo{Description: &desc}},
+		}}})
+	}))
+	defer server.Close()
+
+	c := NewImmichClient(server.URL, "key")
+	if err := c.ResolveAPIMode("auto"); err != nil {
+		t.Fatalf("resolve api mode: %v", err)
+	}
+
+	ids, stats, err := c.ListAllAssetIDs(nil, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "a1" {
+		t.Fatalf("pre-1.106 assets must not be treated as external, got %v", ids)
+	}
+	if stats.ExternalLibrarySkipped != 0 {
+		t.Fatalf("expected no external-library skips on pre-1.106, got %d", stats.ExternalLibrarySkipped)
+	}
+}

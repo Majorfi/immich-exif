@@ -234,6 +234,10 @@ func sha1HexOf(data string) string {
 }
 
 func assetServerWithExif() *httptest.Server {
+	return assetServerInLibrary("")
+}
+
+func assetServerInLibrary(libraryID string) *httptest.Server {
 	desc := "Test Description"
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/original") {
@@ -244,6 +248,7 @@ func assetServerWithExif() *httptest.Server {
 			ID:               "asset-1",
 			OriginalFileName: "photo.jpg",
 			Checksum:         sha1HexOf("fake-image-data"),
+			LibraryID:        libraryID,
 			ExifInfo:         &model.ExifInfo{Description: &desc},
 		}
 		w.Header().Set("Content-Type", "application/json")

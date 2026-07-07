@@ -81,16 +81,7 @@ func dedup(ids []string) []string {
 }
 
 func shouldUseStateCache(cfg *model.Config) bool {
-	if cfg == nil || !cfg.All {
-		return false
-	}
-	if cfg.DryRun {
-		return false
-	}
-	if cfg.ExportDir != "" {
-		return false
-	}
-	return true
+	return cfg != nil && cfg.All && cfg.WillReplace()
 }
 
 func shouldMirrorExportByAlbum(cfg *model.Config) bool {

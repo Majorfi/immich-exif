@@ -77,7 +77,7 @@ func run() int {
 		return 1
 	}
 
-	if !cfg.DryRun && cfg.ExportDir == "" {
+	if cfg.WillReplace() {
 		warnIfServerTrashDisabled(client)
 	}
 
@@ -263,8 +263,7 @@ func resolveAssetIDs(client *api.ImmichClient, cfg *model.Config, shouldSkip fun
 	stats := api.AssetSelectionStats{}
 
 	if cfg.All {
-		skipExternalLibrary := !cfg.DryRun && cfg.ExportDir == ""
-		ids, allStats, err := client.ListAllAssetIDs(shouldSkip, skipExternalLibrary)
+		ids, allStats, err := client.ListAllAssetIDs(shouldSkip, cfg.WillReplace())
 		if err != nil {
 			return nil, api.AssetSelectionStats{}, fmt.Errorf("list all assets: %w", err)
 		}

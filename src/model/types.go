@@ -93,6 +93,12 @@ type UploadResponse struct {
 	Status string `json:"status"`
 }
 
+// WillReplace reports whether this run mutates server assets; dry-run and
+// export are read-only.
+func (c *Config) WillReplace() bool {
+	return !c.DryRun && c.ExportDir == ""
+}
+
 type ProcessResult struct {
 	AssetID     string
 	Status      ResultStatus

@@ -193,7 +193,7 @@ func TestProcessAssetSkipsTrashedOriginal(t *testing.T) {
 // Replacing an external-library asset would migrate it into the internal
 // library and duplicate it at the next scan; only read-only modes may touch it.
 func TestProcessAssetSkipsExternalLibraryAssetOnReplace(t *testing.T) {
-	server := externalLibraryAssetServer()
+	server := assetServerInLibrary("5b9f1a2e-1111-4222-8333-444455556666")
 	defer server.Close()
 
 	client := api.NewImmichClient(server.URL, "key")
@@ -207,7 +207,7 @@ func TestProcessAssetSkipsExternalLibraryAssetOnReplace(t *testing.T) {
 }
 
 func TestProcessAssetAllowsExternalLibraryAssetInDryRun(t *testing.T) {
-	server := externalLibraryAssetServer()
+	server := assetServerInLibrary("5b9f1a2e-1111-4222-8333-444455556666")
 	defer server.Close()
 
 	defer withMockExiftool(
@@ -226,7 +226,7 @@ func TestProcessAssetAllowsExternalLibraryAssetInDryRun(t *testing.T) {
 }
 
 func TestProcessAssetAllowsExternalLibraryAssetInExport(t *testing.T) {
-	server := externalLibraryAssetServer()
+	server := assetServerInLibrary("5b9f1a2e-1111-4222-8333-444455556666")
 	defer server.Close()
 
 	defer withMockExiftool(
@@ -245,21 +245,44 @@ func TestProcessAssetAllowsExternalLibraryAssetInExport(t *testing.T) {
 	}
 }
 
-func externalLibraryAssetServer() *httptest.Server {
+// On pre-1.106 servers every asset carries a libraryId, so the external guard
+// must stand down and let replace runs proceed.
+func TestProcessAssetAllowsLibraryIDAssetOnPre106Server(t *testing.T) {
 	desc := "Test Description"
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/original") {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/server/about":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"version":"1.105.1"}`))
+		case strings.HasSuffix(r.URL.Path, "/original"):
 			w.Write([]byte("fake-image-data"))
-			return
+		default:
+			asset := model.AssetResponse{
+				ID:               "asset-1",
+				OriginalFileName: "photo.jpg",
+				Checksum:         sha1HexOf("fake-image-data"),
+				LibraryID:        "5b9f1a2e-1111-4222-8333-444455556666",
+				ExifInfo:         &model.ExifInfo{Description: &desc},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(asset)
 		}
-		asset := model.AssetResponse{
-			ID:               "asset-1",
-			OriginalFileName: "photo.jpg",
-			LibraryID:        "5b9f1a2e-1111-4222-8333-444455556666",
-			Checksum:         sha1HexOf("fake-image-data"),
-			ExifInfo:         &model.ExifInfo{Description: &desc},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(asset)
 	}))
+	defer server.Close()
+
+	defer withMockExiftool(
+		func(string) (exif.ExifTagMap, error) { return exif.ExifTagMap{}, nil },
+		func(string, []string) error { return nil },
+	)()
+
+	client := api.NewImmichClient(server.URL, "key")
+	if err := client.ResolveAPIMode("auto"); err != nil {
+		t.Fatalf("resolve api mode: %v", err)
+	}
+
+	uploader := &mockUploader{outcome: UploadOutcome{NewID: "new-id", Cacheable: true}}
+	result := ProcessAsset(client, uploader, &model.Config{}, "asset-1", 1, 1, &noopEmitter{}, nil)
+	if result.Status != model.StatusSuccess {
+		t.Fatalf("expected the guard to stand down on pre-1.106, got %s: %s", result.Status, result.Message)
+	}
 }
