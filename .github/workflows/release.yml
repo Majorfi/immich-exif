@@ -16,6 +16,7 @@ on:
 permissions:
   contents: write
   packages: write
+  actions: write
 
 jobs:
   create-tag:
@@ -61,6 +62,13 @@ jobs:
           git config --local user.name "GitHub Action"
           git tag ${{ steps.create_tag.outputs.new_tag }}
           git push origin ${{ steps.create_tag.outputs.new_tag }}
+
+      # Tags pushed with GITHUB_TOKEN never fire on-push workflows (recursion
+      # guard), so the version-tagged Docker image must be dispatched explicitly.
+      - name: Trigger the Docker build for the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run docker-publish.yml --ref ${{ steps.create_tag.outputs.new_tag }}
 
   goreleaser:
     needs: create-tag
