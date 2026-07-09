@@ -155,6 +155,23 @@ func TestProcessAssetFacesFetchFails(t *testing.T) {
 	}
 }
 
+func TestProcessAssetFacesForbiddenNamesPermission(t *testing.T) {
+	var facesCalls atomic.Int32
+	server := facesAssetServer([]model.PersonResponse{{ID: "p1", Name: "Alice"}}, nil, http.StatusForbidden, &facesCalls)
+	defer server.Close()
+
+	defer withMockExiftool(
+		func(string) (exif.ExifTagMap, error) { return exif.ExifTagMap{}, nil },
+		nil,
+	)()
+
+	client := api.NewImmichClient(server.URL, "key")
+	result := ProcessAsset(client, nil, &model.Config{Faces: true}, "asset-1", 1, 1, &noopEmitter{}, nil)
+	if result.Status != model.StatusFailed || !strings.Contains(result.Message, "face.read permission") {
+		t.Fatalf("expected a face.read permission hint on 403, got %s: %s", result.Status, result.Message)
+	}
+}
+
 func TestProcessAssetSkipsUploadWhenFacesChangeMidRun(t *testing.T) {
 	var facesCalls atomic.Int32
 	firstFaces := []model.AssetFaceResponse{{
@@ -254,5 +271,69 @@ func TestProcessAssetFacesOffFetchesNothing(t *testing.T) {
 	}
 	if facesCalls.Load() != 0 {
 		t.Fatalf("faces endpoint must not be queried without -faces, got %d calls", facesCalls.Load())
+	}
+}
+
+// When the file's regions already match the server, no RegionInfo is written,
+// so a mid-run face move is not this run's concern and must not block an
+// unrelated exif change from uploading. The pre-upload faces re-check must not
+// fire either.
+func TestProcessAssetMatchingFacesDoNotBlockExifUpload(t *testing.T) {
+	var facesCalls atomic.Int32
+	matchingFaces := []model.AssetFaceResponse{{
+		BoundingBoxX1: 100, BoundingBoxY1: 50, BoundingBoxX2: 300, BoundingBoxY2: 250,
+		ImageWidth: 1000, ImageHeight: 500,
+		Person: &model.PersonResponse{ID: "p1", Name: "Alice"},
+	}}
+	desc := "a new description"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/faces" {
+			facesCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(matchingFaces)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/original") {
+			w.Write([]byte("fake-image-data"))
+			return
+		}
+		asset := model.AssetResponse{
+			ID:               "asset-1",
+			OriginalFileName: "photo.jpg",
+			Checksum:         sha1HexOf("fake-image-data"),
+			People:           []model.PersonResponse{{ID: "p1", Name: "Alice"}},
+			ExifInfo:         &model.ExifInfo{Description: &desc},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(asset)
+	}))
+	defer server.Close()
+
+	defer withMockExiftool(
+		func(string) (exif.ExifTagMap, error) {
+			return exif.ExifTagMap{
+				"ImageWidth":  float64(4000),
+				"ImageHeight": float64(2000),
+				"XMP-mwg-rs:RegionInfo": map[string]any{
+					"AppliedToDimensions": map[string]any{"W": float64(4000), "H": float64(2000), "Unit": "pixel"},
+					"RegionList": []any{map[string]any{
+						"Name": "Alice",
+						"Type": "Face",
+						"Area": map[string]any{"X": 0.2, "Y": 0.3, "W": 0.2, "H": 0.4, "Unit": "normalized"},
+					}},
+				},
+			}, nil
+		},
+		func(string, []string) error { return nil },
+	)()
+
+	client := api.NewImmichClient(server.URL, "key")
+	uploader := &mockUploader{outcome: UploadOutcome{NewID: "new-id", Cacheable: true}}
+	result := ProcessAsset(client, uploader, &model.Config{Faces: true}, "asset-1", 1, 1, &noopEmitter{}, nil)
+	if result.Status != model.StatusSuccess {
+		t.Fatalf("expected success (exif upload not blocked by a face move), got %s: %s", result.Status, result.Message)
+	}
+	if facesCalls.Load() != 1 {
+		t.Fatalf("expected 1 faces call (compare only, no pre-upload re-check), got %d", facesCalls.Load())
 	}
 }

@@ -25,20 +25,26 @@ type AssetFaceResponse struct {
 	Person        *PersonResponse `json:"person"`
 }
 
+// NamedVisibleName returns a person's write-eligible region name and whether
+// they have one: visible and named, mirroring what Immich itself is willing to
+// import from file regions. It is the single definition of that eligibility,
+// shared by the search pre-filter and the region writer.
+func NamedVisibleName(person PersonResponse) (string, bool) {
+	if person.IsHidden {
+		return "", false
+	}
+	name := strings.TrimSpace(person.Name)
+	return name, name != ""
+}
+
 // NamedPeopleNames returns the sorted names of the asset's visible, named
-// people. Unnamed ML clusters and hidden people are excluded, mirroring what
-// Immich itself is willing to import from file regions.
+// people. Unnamed ML clusters and hidden people are excluded.
 func NamedPeopleNames(asset AssetResponse) []string {
 	var names []string
 	for _, person := range asset.People {
-		if person.IsHidden {
-			continue
+		if name, ok := NamedVisibleName(person); ok {
+			names = append(names, name)
 		}
-		name := strings.TrimSpace(person.Name)
-		if name == "" {
-			continue
-		}
-		names = append(names, name)
 	}
 	sort.Strings(names)
 	return names
@@ -46,7 +52,16 @@ func NamedPeopleNames(asset AssetResponse) []string {
 
 // HasFaceRegionsToEmbed reports whether a -faces run has anything to write
 // for this asset: regions only apply to image files, and only named people
-// are written.
+// are written. It answers the presence question without allocating and sorting
+// the name list, for the per-asset -all pre-filter.
 func HasFaceRegionsToEmbed(asset AssetResponse) bool {
-	return !IsVideoAsset(asset) && len(NamedPeopleNames(asset)) > 0
+	if IsVideoAsset(asset) {
+		return false
+	}
+	for _, person := range asset.People {
+		if _, ok := NamedVisibleName(person); ok {
+			return true
+		}
+	}
+	return false
 }

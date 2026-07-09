@@ -53,14 +53,17 @@ func BuildFaceRegions(faces []model.AssetFaceResponse, orientation int) []FaceRe
 
 	var regions []FaceRegion
 	for _, face := range faces {
-		if face.Person == nil || face.Person.IsHidden {
+		if face.Person == nil {
 			continue
 		}
-		if face.SourceType == "exif" && detectedNames[normalizedRegionName(face.Person.Name)] {
+		name, ok := model.NamedVisibleName(*face.Person)
+		if !ok {
 			continue
 		}
-		name := strings.TrimSpace(face.Person.Name)
-		if name == "" || face.ImageWidth <= 0 || face.ImageHeight <= 0 {
+		if face.SourceType == "exif" && detectedNames[normalizedRegionName(name)] {
+			continue
+		}
+		if face.ImageWidth <= 0 || face.ImageHeight <= 0 {
 			continue
 		}
 		w := float64(face.BoundingBoxX2-face.BoundingBoxX1) / float64(face.ImageWidth)
@@ -73,13 +76,19 @@ func BuildFaceRegions(faces []model.AssetFaceResponse, orientation int) []FaceRe
 		x, y, w, h = rasterRegion(x, y, w, h, orientation)
 		regions = append(regions, FaceRegion{Name: name, X: clamp01(x), Y: clamp01(y), W: clamp01(w), H: clamp01(h)})
 	}
+	sortFaceRegions(regions)
+	return regions
+}
+
+// sortFaceRegions orders regions by name then X. FaceRegionsMatch compares two
+// sets positionally, so both sides must be ordered by this one comparator.
+func sortFaceRegions(regions []FaceRegion) {
 	sort.Slice(regions, func(i, j int) bool {
 		if regions[i].Name != regions[j].Name {
 			return regions[i].Name < regions[j].Name
 		}
 		return regions[i].X < regions[j].X
 	})
-	return regions
 }
 
 // rasterRegion maps a normalized region from the displayed
@@ -171,10 +180,9 @@ func FaceRegionsMatch(current, desired []FaceRegion, rasterWidth, rasterHeight i
 	return true
 }
 
+// coordTolerance is only reached through FaceRegionsMatch, whose callers
+// establish rasterDim > 0 before comparing, so no zero guard is needed.
 func coordTolerance(rasterDim int) float64 {
-	if rasterDim <= 0 {
-		return regionCoordTolerance
-	}
 	return math.Max(regionCoordTolerance, 2/float64(rasterDim))
 }
 
@@ -211,12 +219,7 @@ func parseFaceRegions(value any) []FaceRegion {
 			H:    floatTag(area["H"]),
 		})
 	}
-	sort.Slice(regions, func(i, j int) bool {
-		if regions[i].Name != regions[j].Name {
-			return regions[i].Name < regions[j].Name
-		}
-		return regions[i].X < regions[j].X
-	})
+	sortFaceRegions(regions)
 	return regions
 }
 
