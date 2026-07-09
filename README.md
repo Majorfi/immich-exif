@@ -92,7 +92,8 @@ docker run --rm \
   ghcr.io/majorfi/immich-exif:latest -dry-run <asset-id>
 ```
 
-Mount a volume (`-v "$PWD/out:/out"`) when using `-export-dir /out`.
+Mount a volume (`-v "$PWD/out:/out"`) when using `-export-dir /out`. The container runs as uid 1000, so mounted directories must be writable by that user.
+For incremental `-all` runs, persist the state cache with `-v immich-exif-state:/home/appuser`.
 
 ### Build from source
 
