@@ -172,6 +172,23 @@ func TestProcessAssetFacesForbiddenNamesPermission(t *testing.T) {
 	}
 }
 
+func TestProcessAssetFacesUnauthorizedNamesPermission(t *testing.T) {
+	var facesCalls atomic.Int32
+	server := facesAssetServer([]model.PersonResponse{{ID: "p1", Name: "Alice"}}, nil, http.StatusUnauthorized, &facesCalls)
+	defer server.Close()
+
+	defer withMockExiftool(
+		func(string) (exif.ExifTagMap, error) { return exif.ExifTagMap{}, nil },
+		nil,
+	)()
+
+	client := api.NewImmichClient(server.URL, "key")
+	result := ProcessAsset(client, nil, &model.Config{Faces: true}, "asset-1", 1, 1, &noopEmitter{}, nil)
+	if result.Status != model.StatusFailed || !strings.Contains(result.Message, "face.read permission") {
+		t.Fatalf("expected a face.read permission hint on 401, got %s: %s", result.Status, result.Message)
+	}
+}
+
 func TestProcessAssetSkipsUploadWhenFacesChangeMidRun(t *testing.T) {
 	var facesCalls atomic.Int32
 	firstFaces := []model.AssetFaceResponse{{
