@@ -54,6 +54,7 @@ func parseConfig() (*model.Config, error) {
 	flag.BoolVar(&cfg.ResolveDuplicate, "resolve-duplicate", false, "Resolve duplicate upload status by copying associations to the duplicate asset and trashing the old one")
 	flag.BoolVar(&cfg.IncludeNoAlbum, "include-no-album", true, "With album-mirrored export, include assets with no album under no-album/")
 	flag.BoolVar(&cfg.All, "all", false, "Process all assets")
+	flag.BoolVar(&cfg.Faces, "faces", false, "Also write named Immich people as MWG face regions (XMP-mwg-rs)")
 	flag.BoolVar(&cfg.Force, "force", false, "Force re-processing all assets (ignore state cache)")
 	flag.Var(&albums, "album", "Album ID to process (repeatable), or all")
 

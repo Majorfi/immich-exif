@@ -235,7 +235,7 @@ func resolveAssetIDs(client *api.ImmichClient, cfg *model.Config, shouldSkip fun
 	stats := api.AssetSelectionStats{}
 
 	if cfg.All {
-		ids, allStats, err := client.ListAllAssetIDs(shouldSkip, cfg.WillReplace())
+		ids, allStats, err := client.ListAllAssetIDs(shouldSkip, cfg.WillReplace(), cfg.Faces)
 		if err != nil {
 			return nil, api.AssetSelectionStats{}, fmt.Errorf("list all assets: %w", err)
 		}

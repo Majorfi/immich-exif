@@ -57,7 +57,7 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	if model.IsUnsupportedVideoAsset(*asset) {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "unsupported video container for metadata embedding"}
 	}
-	if len(exif.CollectExifArgs(exif.CompareAssetMetadata(*asset, nil))) == 0 {
+	if len(exif.CollectExifArgs(exif.CompareAssetMetadata(*asset, nil))) == 0 && !wantsFaceRegions(cfg, *asset) {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "no metadata to embed"}
 	}
 	if strings.TrimSpace(asset.Checksum) == "" {
@@ -90,6 +90,10 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	}
 
 	changes := exif.CompareAssetMetadata(*asset, existing)
+	changes, faceRegions, err := appendFaceRegionChange(client, cfg, *asset, existing, changes)
+	if err != nil {
+		return fail("fetch faces: %v", err)
+	}
 	exifArgs := exif.CollectExifArgs(changes)
 	if len(exifArgs) == 0 {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "metadata already matches", ExifMatched: true}
@@ -157,6 +161,19 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	}
 	if !fresh.UpdatedAt.Equal(asset.UpdatedAt) {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset changed on the server while processing; re-run to pick up the latest metadata"}
+	}
+	// Face edits (renames, box moves, reassignments) do not bump updatedAt, so
+	// the regions we are about to embed get their own freshness check. Skip it
+	// when no region is being written: the file already matched, so a mid-run
+	// face move is not ours to guard and must not block an unrelated exif write.
+	if len(faceRegions) > 0 {
+		stale, staleErr := faceRegionsStale(client, assetID, existing, faceRegions)
+		if staleErr != nil {
+			return fail("re-check faces before upload: %v", staleErr)
+		}
+		if stale {
+			return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "faces changed on the server while processing; re-run to pick up the latest state"}
+		}
 	}
 
 	var uploadOutcome UploadOutcome

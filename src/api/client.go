@@ -106,9 +106,27 @@ func (c *ImmichClient) doRequest(req *http.Request) (*http.Response, error) {
 	if resp.StatusCode >= 400 {
 		defer resp.Body.Close()
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
-		return nil, fmt.Errorf("%s %s returned %d: %s", req.Method, req.URL.Path, resp.StatusCode, model.SanitizeForTerminal(string(bodyBytes)))
+		return nil, &StatusError{
+			Method:     req.Method,
+			Path:       req.URL.Path,
+			StatusCode: resp.StatusCode,
+			Body:       model.SanitizeForTerminal(string(bodyBytes)),
+		}
 	}
 	return resp, nil
+}
+
+// StatusError carries the HTTP status of a failed request so callers can react
+// to it (e.g. a missing key permission) without parsing the message text.
+type StatusError struct {
+	Method     string
+	Path       string
+	StatusCode int
+	Body       string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("%s %s returned %d: %s", e.Method, e.Path, e.StatusCode, e.Body)
 }
 
 func (c *ImmichClient) About() (*model.ServerAbout, error) {
