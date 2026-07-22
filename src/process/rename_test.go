@@ -50,6 +50,12 @@ func TestValidateRenamePattern(t *testing.T) {
 	if err := ValidateRenamePattern("%Y/%m"); err == nil {
 		t.Fatal("expected error for a pattern containing a path separator")
 	}
+	if err := ValidateRenamePattern(""); err == nil {
+		t.Fatal("expected error for an empty pattern")
+	}
+	if err := ValidateRenamePattern("   "); err == nil {
+		t.Fatal("expected error for a whitespace-only pattern")
+	}
 }
 
 func exportTestAsset(date, tz string) *model.AssetResponse {

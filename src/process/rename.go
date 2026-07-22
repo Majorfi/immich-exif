@@ -61,6 +61,9 @@ func ValidateRenamePattern(pattern string) error {
 	if err != nil {
 		return err
 	}
+	if strings.TrimSpace(rendered) == "" {
+		return fmt.Errorf("rename pattern renders an empty filename: %q", pattern)
+	}
 	if _, err := safePathComponent("rename pattern result", rendered+".jpg"); err != nil {
 		return fmt.Errorf("rename pattern must not contain path separators: %q", pattern)
 	}
