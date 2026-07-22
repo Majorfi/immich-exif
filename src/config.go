@@ -10,6 +10,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/majorfi/immich-exif/model"
+	"github.com/majorfi/immich-exif/process"
 )
 
 var errShowVersion = errors.New("version requested")
@@ -55,6 +56,8 @@ func parseConfig() (*model.Config, error) {
 	flag.BoolVar(&cfg.IncludeNoAlbum, "include-no-album", true, "With album-mirrored export, include assets with no album under no-album/")
 	flag.BoolVar(&cfg.All, "all", false, "Process all assets")
 	flag.BoolVar(&cfg.Faces, "faces", false, "Also write named Immich people as MWG face regions (XMP-mwg-rs)")
+	flag.BoolVar(&cfg.Rename, "rename", os.Getenv("RENAME") == "true", "With -export-dir, rename exported files from the corrected capture date (env: RENAME=true)")
+	flag.StringVar(&cfg.RenamePattern, "rename-pattern", renamePatternDefault(), "strftime-style pattern for -rename: %Y %y %m %d %H %M %S (env: RENAME_PATTERN)")
 	flag.BoolVar(&cfg.Force, "force", false, "Force re-processing all assets (ignore state cache)")
 	flag.Var(&albums, "album", "Album ID to process (repeatable), or all")
 
@@ -141,11 +144,30 @@ func parseConfig() (*model.Config, error) {
 		return nil, fmt.Errorf("--force can only be used with --all or --album all")
 	}
 
+	if cfg.Rename && cfg.ExportDir == "" {
+		return nil, fmt.Errorf("--rename only applies to --export-dir runs")
+	}
+	if !cfg.Rename && flagWasSet("rename-pattern") {
+		return nil, fmt.Errorf("--rename-pattern has no effect without --rename")
+	}
+	if cfg.Rename {
+		if err := process.ValidateRenamePattern(cfg.RenamePattern); err != nil {
+			return nil, err
+		}
+	}
+
 	if cfg.Workers < 1 {
 		cfg.Workers = 1
 	}
 
 	return cfg, nil
+}
+
+func renamePatternDefault() string {
+	if pattern := os.Getenv("RENAME_PATTERN"); pattern != "" {
+		return pattern
+	}
+	return "%Y%m%d-%H%M%S"
 }
 
 func flagWasSet(name string) bool {

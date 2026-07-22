@@ -59,6 +59,17 @@ With `-export-dir` and `-all` or `-album all`, exported assets are mirrored per 
 With `-export-dir` and multiple explicit `-album` flags, assets are mirrored per album folder (`/<export-dir>/<album-id>/...`).
 This is not a full-library backup mode: assets with no writable metadata to embed and assets whose metadata already matches are still skipped.
 
+#### Renaming exported files (`-rename`)
+
+Messaging apps like WhatsApp and Signal strip EXIF on send, so a shared photo loses the date this tool just fixed. Add `-rename` (export mode only) to also stamp the corrected capture date into the filename, keeping the date readable even after the metadata is gone:
+
+```bash
+immich-exif -y -export-dir ./out -rename -all
+# IMG_45698.JPG -> 20040605-142532.JPG
+```
+
+The name is built from the same corrected date and time zone written into the file's EXIF. The default pattern is `%Y%m%d-%H%M%S`; override it with `-rename-pattern` (or `RENAME_PATTERN`) using the tokens `%Y %y %m %d %H %M %S` (and `%%` for a literal percent). The original extension is always preserved. If the server has no date for an asset, its original name is used. If the destination name already exists, a `-001`, `-002` suffix is added so nothing is overwritten.
+
 ### Incremental mode (`--all` / `-album all`)
 
 When using `--all` or `-album all`, the tool maintains a local SQLite state cache that tracks which assets have already been processed. On subsequent runs, assets whose Immich metadata hasn't changed are skipped entirely, avoiding the expensive download/compare/upload cycle.
@@ -112,6 +123,9 @@ The tool reads credentials from CLI flags or environment variables. A `.env` fil
 # .env
 IMMICH_URL=https://your-immich-server.com
 IMMICH_API_KEY=your-api-key
+# Optional: rename exported files from the corrected capture date (export mode)
+RENAME=true
+RENAME_PATTERN=%Y%m%d-%H%M%S
 ```
 
 ## API key permissions
@@ -157,6 +171,8 @@ immich-exif [flags] [asset-ids...]
 | `-all`               | `false`           | Select the all-assets mode (timeline, archived and hidden; external-library assets only on read-only runs) |
 | `-force`             | `false`           | Ignore the state cache and re-process (only valid with `-all` / `-album all`)                              |
 | `-faces`             | `false`           | Also write named Immich people as MWG face regions (`XMP-mwg-rs`), readable by digiKam and others          |
+| `-rename`            | `false`           | With `-export-dir`, rename exported files from the corrected capture date (env: `RENAME=true`)             |
+| `-rename-pattern`    | `%Y%m%d-%H%M%S`   | strftime-style pattern for `-rename` (env: `RENAME_PATTERN`)                                               |
 | `-album`             |                   | Album ID to process (repeatable), or `all` as an alias of `-all`                                           |
 | `-version`           | `false`           | Print the version and exit                                                                                 |
 

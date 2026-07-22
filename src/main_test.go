@@ -1638,3 +1638,70 @@ func TestResolveAssetIDsExternalLibraryGate(t *testing.T) {
 		t.Fatalf("expected no external-library skips on dry-run, got %d", stats.ExternalLibrarySkipped)
 	}
 }
+
+func TestParseConfigRenameRequiresExportDir(t *testing.T) {
+	defer setupConfigTest([]string{
+		"immich-exif",
+		"-url", "https://example.com",
+		"-api-key", "test-key",
+		"-rename",
+		"-all",
+	})()
+
+	if _, err := parseConfig(); err == nil {
+		t.Fatal("expected --rename without --export-dir to be rejected")
+	}
+}
+
+func TestParseConfigRenamePatternWithoutRename(t *testing.T) {
+	defer setupConfigTest([]string{
+		"immich-exif",
+		"-url", "https://example.com",
+		"-api-key", "test-key",
+		"-export-dir", "./out",
+		"-rename-pattern", "%Y",
+		"-all",
+	})()
+
+	if _, err := parseConfig(); err == nil {
+		t.Fatal("expected --rename-pattern without --rename to be rejected")
+	}
+}
+
+func TestParseConfigRenameInvalidPattern(t *testing.T) {
+	defer setupConfigTest([]string{
+		"immich-exif",
+		"-url", "https://example.com",
+		"-api-key", "test-key",
+		"-export-dir", "./out",
+		"-rename",
+		"-rename-pattern", "%Q",
+		"-all",
+	})()
+
+	if _, err := parseConfig(); err == nil {
+		t.Fatal("expected an invalid rename pattern to be rejected")
+	}
+}
+
+func TestParseConfigRenameSuccess(t *testing.T) {
+	defer setupConfigTest([]string{
+		"immich-exif",
+		"-url", "https://example.com",
+		"-api-key", "test-key",
+		"-export-dir", "./out",
+		"-rename",
+		"-all",
+	})()
+
+	cfg, err := parseConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.Rename {
+		t.Fatal("expected cfg.Rename=true")
+	}
+	if cfg.RenamePattern != "%Y%m%d-%H%M%S" {
+		t.Fatalf("expected default pattern, got %q", cfg.RenamePattern)
+	}
+}
