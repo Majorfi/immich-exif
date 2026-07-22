@@ -68,7 +68,7 @@ immich-exif -y -export-dir ./out -rename -all
 # IMG_45698.JPG -> 20040605-142532.JPG
 ```
 
-The name is built from the same corrected date and time zone written into the file's EXIF. The default pattern is `%Y%m%d-%H%M%S`; override it with `-rename-pattern` (or `RENAME_PATTERN`) using the tokens `%Y %y %m %d %H %M %S` (and `%%` for a literal percent). The original extension is always preserved. Assets the server has no date for keep their original name, and two photos sharing one timestamp get a `-001`, `-002` suffix so neither is overwritten.
+The name is built from the same corrected date and time zone written into the file's EXIF. The default pattern is `%Y%m%d-%H%M%S`; override it with `-rename-pattern` (or `RENAME_PATTERN`) using the tokens `%Y %y %m %d %H %M %S` (and `%%` for a literal percent). The original extension is always preserved. If the server has no date for an asset, its original name is used. If the destination name already exists, a `-001`, `-002` suffix is added so nothing is overwritten.
 
 ### Incremental mode (`--all` / `-album all`)
 
