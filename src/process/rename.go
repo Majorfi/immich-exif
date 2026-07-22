@@ -87,6 +87,9 @@ func exportFileName(cfg *model.Config, asset *model.AssetResponse, originalSafeN
 		return "", err
 	}
 	name := stem + filepath.Ext(originalSafeName)
+	// Defense in depth at the write site: ValidateRenamePattern already rejects
+	// separator-bearing patterns at startup, but this guard keeps a rendered name
+	// from ever escaping the export dir regardless of how cfg.Rename was set.
 	if _, err := safePathComponent("rename pattern result", name); err != nil {
 		return "", err
 	}
