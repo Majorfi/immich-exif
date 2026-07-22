@@ -143,6 +143,9 @@ type Config struct {
 	VerifyUpload bool
 	Faces        bool
 
+	Rename        bool
+	RenamePattern string
+
 	ListAlbums            bool
 	ResolveDuplicate      bool
 	IncludeNoAlbum        bool
