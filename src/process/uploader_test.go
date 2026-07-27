@@ -100,9 +100,10 @@ func TestModernUploaderArchivedAssetRestoresVisibilityBeforeDelete(t *testing.T)
 // videoReplaceServer handles a full created-status replace for a video asset
 // whose old copy has one assigned face, answering POST /api/faces with
 // facePostStatus so the caller can drive the skip vs fail hook branches.
-func videoReplaceServer(t *testing.T, calls *[]string, facePostStatus int) *httptest.Server {
+func videoReplaceServer(t *testing.T, calls *[]string, facePostStatus int) (*httptest.Server, *[]model.CreateFaceRequest) {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var posted []model.CreateFaceRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		*calls = append(*calls, r.Method+" "+r.URL.Path)
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/assets":
@@ -121,6 +122,9 @@ func videoReplaceServer(t *testing.T, calls *[]string, facePostStatus int) *http
 			}
 			_ = json.NewEncoder(w).Encode([]model.AssetFaceResponse{})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/faces":
+			var req model.CreateFaceRequest
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			posted = append(posted, req)
 			w.WriteHeader(facePostStatus)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/assets":
 			w.WriteHeader(http.StatusNoContent)
@@ -128,6 +132,7 @@ func videoReplaceServer(t *testing.T, calls *[]string, facePostStatus int) *http
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 	}))
+	return server, &posted
 }
 
 func videoAsset() *model.AssetResponse {
@@ -142,7 +147,7 @@ func videoAsset() *model.AssetResponse {
 
 func TestModernUploaderVideoTooOldForFacesSkipsAndStillTrashes(t *testing.T) {
 	var calls []string
-	server := videoReplaceServer(t, &calls, http.StatusNotFound)
+	server, _ := videoReplaceServer(t, &calls, http.StatusNotFound)
 	defer server.Close()
 
 	tempDir := t.TempDir()
@@ -165,7 +170,7 @@ func TestModernUploaderVideoTooOldForFacesSkipsAndStillTrashes(t *testing.T) {
 
 func TestModernUploaderVideoFacePermissionDeniedDoesNotTrash(t *testing.T) {
 	var calls []string
-	server := videoReplaceServer(t, &calls, http.StatusForbidden)
+	server, _ := videoReplaceServer(t, &calls, http.StatusForbidden)
 	defer server.Close()
 
 	tempDir := t.TempDir()
@@ -181,6 +186,32 @@ func TestModernUploaderVideoFacePermissionDeniedDoesNotTrash(t *testing.T) {
 	}
 	if slices.Contains(calls, "DELETE /api/assets") {
 		t.Fatal("old asset must NOT be trashed when face preservation is denied")
+	}
+}
+
+func TestModernUploaderVideoPreservesFacesThenTrashes(t *testing.T) {
+	var calls []string
+	server, posted := videoReplaceServer(t, &calls, http.StatusCreated)
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "clip.mp4")
+	if err := os.WriteFile(filePath, []byte("data"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	uploader := &ModernUploader{Client: api.NewImmichClient(server.URL, "key"), Faces: true}
+	if _, err := uploader.Upload(filePath, videoAsset(), &noopEmitter{}); err != nil {
+		t.Fatalf("preserving faces must not fail the replace: %v", err)
+	}
+	if len(*posted) != 1 {
+		t.Fatalf("expected one preserved face, got %d", len(*posted))
+	}
+	if got := (*posted)[0]; got.PersonID != "p1" || got.AssetID != "new-asset-id" {
+		t.Fatalf("face re-linked to the wrong person/asset: %+v", got)
+	}
+	if !slices.Contains(calls, "DELETE /api/assets") {
+		t.Fatal("old asset must still be trashed once faces are preserved")
 	}
 }
 
