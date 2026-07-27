@@ -40,24 +40,28 @@ func appendFaceRegionChange(client *api.ImmichClient, cfg *model.Config, asset m
 	return changes, regions, nil
 }
 
+// statusCodeOf extracts the HTTP status from an API error, reporting false when
+// the error is not an *api.StatusError (e.g. a transport failure).
+func statusCodeOf(err error) (int, bool) {
+	var status *api.StatusError
+	if !errors.As(err, &status) {
+		return 0, false
+	}
+	return status.StatusCode, true
+}
+
 // isPermissionDenied reports whether an API error carries a 401/403 status, the
 // signature of an API key missing the face.read permission.
 func isPermissionDenied(err error) bool {
-	var status *api.StatusError
-	if !errors.As(err, &status) {
-		return false
-	}
-	return status.StatusCode == http.StatusUnauthorized || status.StatusCode == http.StatusForbidden
+	code, ok := statusCodeOf(err)
+	return ok && (code == http.StatusUnauthorized || code == http.StatusForbidden)
 }
 
 // isNotFound reports whether an API error carries a 404, which for the faces
 // endpoint means the server predates manual face tagging (Immich 1.127).
 func isNotFound(err error) bool {
-	var status *api.StatusError
-	if !errors.As(err, &status) {
-		return false
-	}
-	return status.StatusCode == http.StatusNotFound
+	code, ok := statusCodeOf(err)
+	return ok && code == http.StatusNotFound
 }
 
 // errFacePreserveUnsupported marks a server too old for the createFace endpoint
