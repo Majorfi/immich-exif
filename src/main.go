@@ -128,7 +128,7 @@ func run() int {
 		return 0
 	}
 
-	uploader := &process.ModernUploader{Client: client, ResolveDuplicate: cfg.ResolveDuplicate, VerifyUpload: cfg.VerifyUpload}
+	uploader := &process.ModernUploader{Client: client, ResolveDuplicate: cfg.ResolveDuplicate, VerifyUpload: cfg.VerifyUpload, Faces: cfg.Faces}
 
 	if cfg.ExportDir != "" {
 		cfg.ExportDir = resolveExportDir(cfg)

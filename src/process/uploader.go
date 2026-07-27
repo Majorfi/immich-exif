@@ -1,6 +1,7 @@
 package process
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -23,6 +24,7 @@ type ModernUploader struct {
 	Client           *api.ImmichClient
 	ResolveDuplicate bool
 	VerifyUpload     bool
+	Faces            bool
 }
 
 func (u *ModernUploader) Upload(filePath string, asset *model.AssetResponse, emitter model.EventEmitter) (UploadOutcome, error) {
@@ -121,6 +123,23 @@ func (u *ModernUploader) finalizeReplacement(filePath string, asset *model.Asset
 		emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Restoring %s visibility on %s...", visibility, model.ShortID(targetID))})
 		if err := u.Client.UpdateAssetVisibility(targetID, visibility); err != nil {
 			return fmt.Errorf("restore %s visibility failed (target asset %s exists but old %s NOT deleted): %w", visibility, targetID, asset.ID, err)
+		}
+	}
+
+	// Videos cannot carry MWG face regions, so the person links are re-created on
+	// the new asset over the API before the old one is trashed — the old asset is
+	// where those links still live.
+	if u.Faces && model.IsVideoAsset(*asset) {
+		created, err := recreateFaces(u.Client, asset.ID, targetID)
+		switch {
+		case errors.Is(err, errFacePreserveUnsupported):
+			emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: "Skipping video face preservation: server predates the faces endpoint (needs Immich 1.127+)"})
+		case isPermissionDenied(err):
+			return fmt.Errorf("face preservation denied — -faces needs the API key's face.create permission (old asset %s NOT deleted, new asset %s left in place): %w", model.ShortID(asset.ID), model.ShortID(targetID), err)
+		case err != nil:
+			return fmt.Errorf("preserve faces failed (old asset %s NOT deleted, new asset %s left in place): %w", model.ShortID(asset.ID), model.ShortID(targetID), err)
+		case created > 0:
+			emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Preserved %d face(s) on %s", created, model.ShortID(targetID))})
 		}
 	}
 
