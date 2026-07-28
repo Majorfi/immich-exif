@@ -25,6 +25,22 @@ type AssetFaceResponse struct {
 	Person        *PersonResponse `json:"person"`
 }
 
+// CreateFaceRequest is the POST /faces payload that links a person to an asset
+// at a pixel box. The coordinates and image dimensions mirror what
+// GetAssetFaces returns, so a box read from one asset re-creates verbatim on
+// another. Immich records it with sourceType "manual", which survives later ML
+// detection jobs (Immich 1.127+).
+type CreateFaceRequest struct {
+	AssetID     string `json:"assetId"`
+	PersonID    string `json:"personId"`
+	X           int    `json:"x"`
+	Y           int    `json:"y"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	ImageWidth  int    `json:"imageWidth"`
+	ImageHeight int    `json:"imageHeight"`
+}
+
 // NamedVisibleName returns a person's write-eligible region name and whether
 // they have one: visible and named, mirroring what Immich itself is willing to
 // import from file regions. It is the single definition of that eligibility,
