@@ -260,7 +260,7 @@ func maybeResolveDuplicatesNow(ctx context.Context, client *api.ImmichClient, cf
 
 	fmt.Printf("\nRe-running unresolved duplicates with -resolve-duplicate (%d assets)\n", len(assetIDs))
 	resolveCfg := buildResolveDuplicateFollowUpConfig(cfg)
-	resolveUploader := &process.ModernUploader{Client: client, ResolveDuplicate: true, VerifyUpload: cfg.VerifyUpload}
+	resolveUploader := &process.ModernUploader{Client: client, ResolveDuplicate: true, VerifyUpload: cfg.VerifyUpload, Faces: cfg.Faces}
 	return runPipeline(ctx, client, resolveUploader, resolveCfg, assetIDs)
 }
 

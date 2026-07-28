@@ -51,7 +51,8 @@ func statusCodeOf(err error) (int, bool) {
 }
 
 // isPermissionDenied reports whether an API error carries a 401/403 status, the
-// signature of an API key missing the face.read permission.
+// signature of an API key missing a face permission (face.read for the GET,
+// face.create for the POST).
 func isPermissionDenied(err error) bool {
 	code, ok := statusCodeOf(err)
 	return ok && (code == http.StatusUnauthorized || code == http.StatusForbidden)
@@ -77,8 +78,16 @@ var errFacePreserveUnsupported = errors.New("server does not support the faces e
 // with none are skipped); a person already linked on the target is left alone so
 // repeated runs do not stack duplicates. Returns the number of faces created.
 func recreateFaces(client *api.ImmichClient, sourceID, targetID string) (int, error) {
+	// A 404 on this first call means the server predates the faces endpoint
+	// (both the GET and the POST arrived with manual tagging in 1.127); the
+	// source asset always exists, so it is never a missing-asset 404. Skip with a
+	// warning instead of failing the replace. Past this point the endpoint is
+	// proven to exist, so a later 404 is a real error and stays fatal.
 	sourceFaces, err := client.GetAssetFaces(sourceID)
 	if err != nil {
+		if isNotFound(err) {
+			return 0, errFacePreserveUnsupported
+		}
 		return 0, err
 	}
 	pending := facesWithPerson(sourceFaces)

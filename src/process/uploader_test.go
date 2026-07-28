@@ -123,7 +123,9 @@ func videoReplaceServer(t *testing.T, calls *[]string, facePostStatus int) (*htt
 			_ = json.NewEncoder(w).Encode([]model.AssetFaceResponse{})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/faces":
 			var req model.CreateFaceRequest
-			_ = json.NewDecoder(r.Body).Decode(&req)
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Errorf("decode POST /api/faces body: %v", err)
+			}
 			posted = append(posted, req)
 			w.WriteHeader(facePostStatus)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/assets":

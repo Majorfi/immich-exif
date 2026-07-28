@@ -132,3 +132,17 @@ func TestRecreateFacesTooOldServer(t *testing.T) {
 		t.Fatalf("expected errFacePreserveUnsupported on a 404, got %v", err)
 	}
 }
+
+func TestRecreateFacesTooOldServerOnGet(t *testing.T) {
+	// A server predating the faces endpoint 404s the GET too, before any POST is
+	// reached; that must still skip gracefully rather than fail the replace.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	_, err := recreateFaces(api.NewImmichClient(server.URL, "key"), "old", "new")
+	if !errors.Is(err, errFacePreserveUnsupported) {
+		t.Fatalf("expected errFacePreserveUnsupported on a GET /faces 404, got %v", err)
+	}
+}
