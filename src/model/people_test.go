@@ -2,13 +2,24 @@ package model
 
 import "testing"
 
-func TestHasFaceRegionsToEmbedExcludesVideos(t *testing.T) {
+func TestHasFaceRegionsToEmbedAllowsSupportedVideos(t *testing.T) {
 	asset := AssetResponse{
 		OriginalMimeType: "video/mp4",
 		People:           []PersonResponse{{ID: "p1", Name: "Alice"}},
 	}
+	if !HasFaceRegionsToEmbed(asset) {
+		t.Fatal("mp4 videos with named people are region-embeddable")
+	}
+}
+
+func TestHasFaceRegionsToEmbedExcludesUnsupportedVideos(t *testing.T) {
+	asset := AssetResponse{
+		OriginalMimeType: "video/x-matroska",
+		OriginalFileName: "clip.mkv",
+		People:           []PersonResponse{{ID: "p1", Name: "Alice"}},
+	}
 	if HasFaceRegionsToEmbed(asset) {
-		t.Fatal("videos cannot hold XMP-mwg-rs regions; must be excluded even with named people")
+		t.Fatal("containers exiftool cannot write must be excluded even with named people")
 	}
 }
 
