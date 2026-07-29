@@ -79,6 +79,109 @@ func TestProcessAssetWritesFaceRegions(t *testing.T) {
 	}
 }
 
+func TestProcessAssetWritesVideoFaceRegionsAnchoredByRotation(t *testing.T) {
+	var facesCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/faces" {
+			facesCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]model.AssetFaceResponse{{
+				BoundingBoxX1: 100, BoundingBoxY1: 50, BoundingBoxX2: 300, BoundingBoxY2: 250,
+				ImageWidth: 1000, ImageHeight: 500,
+				Person: &model.PersonResponse{ID: "p1", Name: "Alice"},
+			}})
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/original") {
+			w.Write([]byte("fake-video-data"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(model.AssetResponse{
+			ID:               "asset-1",
+			OriginalFileName: "clip.mp4",
+			OriginalMimeType: "video/mp4",
+			Checksum:         sha1HexOf("fake-video-data"),
+			People:           []model.PersonResponse{{ID: "p1", Name: "Alice"}},
+		})
+	}))
+	defer server.Close()
+
+	var written []string
+	defer withMockExiftool(
+		// A video has no EXIF Orientation; its display rotation is 90°.
+		func(string) (exif.ExifTagMap, error) {
+			return exif.ExifTagMap{"ImageWidth": float64(640), "ImageHeight": float64(360), "Rotation": float64(90)}, nil
+		},
+		func(_ string, args []string) error {
+			written = args
+			return nil
+		},
+	)()
+
+	client := api.NewImmichClient(server.URL, "key")
+	cfg := &model.Config{DryRun: true, Faces: true}
+	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{}, nil)
+	if result.Status != model.StatusSuccess {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Message)
+	}
+	// Rotation 90 -> orientation 6: rasterRegion maps (x,y)->(y,1-x) and swaps W/H,
+	// so the displayed-space center (0.2,0.3) w/h (0.2,0.4) becomes (0.3,0.8) (0.4,0.2).
+	want := "-XMP-mwg-rs:RegionInfo={AppliedToDimensions={W=640,H=360,Unit=pixel},RegionList=[{Area={X=0.30000,Y=0.80000,W=0.40000,H=0.20000,Unit=normalized},Name=Alice,Type=Face}]}"
+	if len(written) != 1 || written[0] != want {
+		t.Fatalf("unexpected write args:\n got %v\nwant %s", written, want)
+	}
+}
+
+func TestProcessAssetSkipsVideoFaceRegionsWhenRotation180(t *testing.T) {
+	var facesCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/faces" {
+			facesCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]model.AssetFaceResponse{{
+				BoundingBoxX1: 100, BoundingBoxY1: 50, BoundingBoxX2: 300, BoundingBoxY2: 250,
+				ImageWidth: 1000, ImageHeight: 500,
+				Person: &model.PersonResponse{ID: "p1", Name: "Alice"},
+			}})
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/original") {
+			w.Write([]byte("fake-video-data"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(model.AssetResponse{
+			ID: "asset-1", OriginalFileName: "clip.mp4", OriginalMimeType: "video/mp4",
+			Checksum: sha1HexOf("fake-video-data"),
+			People:   []model.PersonResponse{{ID: "p1", Name: "Alice"}},
+		})
+	}))
+	defer server.Close()
+
+	var written []string
+	defer withMockExiftool(
+		func(string) (exif.ExifTagMap, error) {
+			return exif.ExifTagMap{"ImageWidth": float64(640), "ImageHeight": float64(360), "Rotation": float64(180)}, nil
+		},
+		func(_ string, args []string) error { written = args; return nil },
+	)()
+
+	client := api.NewImmichClient(server.URL, "key")
+	cfg := &model.Config{DryRun: true, Faces: true}
+	result := ProcessAsset(client, nil, cfg, "asset-1", 1, 1, &noopEmitter{}, nil)
+	// No other metadata to embed and faces skipped (180° un-anchorable) -> nothing written.
+	if len(written) != 0 {
+		t.Fatalf("a 180° video must not embed face regions, got %v", written)
+	}
+	if facesCalls.Load() != 0 {
+		t.Fatalf("faces should not be fetched for an un-anchorable rotation, got %d calls", facesCalls.Load())
+	}
+	if result.Status != model.StatusSkipped {
+		t.Fatalf("expected skip when nothing is embeddable, got %s: %s", result.Status, result.Message)
+	}
+}
+
 func TestProcessAssetFaceRegionsAlreadyMatch(t *testing.T) {
 	var facesCalls atomic.Int32
 	server := facesAssetServer(

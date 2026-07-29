@@ -16,9 +16,6 @@ func TestVideoRotationToOrientation(t *testing.T) {
 		{0, 1, true},
 		{90, 6, true},
 		{270, 8, true},
-		{-90, 8, true},  // normalized to 270
-		{360, 1, true},  // normalized to 0
-		{450, 6, true},  // normalized to 90
 		{180, 0, false}, // Immich does not re-orient 180 video regions
 		{45, 0, false},  // non-cardinal
 	}

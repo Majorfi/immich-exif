@@ -56,13 +56,14 @@ func regionOrientation(asset model.AssetResponse, existing exif.ExifTagMap) (int
 	return intTag(existing, "Orientation"), true
 }
 
-// videoRotationToOrientation maps a QuickTime display rotation to the EXIF
-// orientation whose inverse transform Immich applies to video regions on
-// import (verified against a live server): 0->1, 90->6, 270->8. A 180 or
-// non-cardinal rotation returns ok=false — Immich does not re-orient 180 video
-// regions the way it does 90/270, so those are skipped rather than misanchored.
+// videoRotationToOrientation maps a QuickTime display rotation (exiftool
+// reports it already normalized to 0/90/180/270) to the EXIF orientation whose
+// inverse transform Immich applies to video regions on import (verified against
+// a live server): 0->1, 90->6, 270->8. A 180 or non-cardinal rotation returns
+// ok=false — Immich does not re-orient 180 video regions the way it does
+// 90/270, so those are skipped rather than misanchored.
 func videoRotationToOrientation(rotation int) (int, bool) {
-	switch ((rotation % 360) + 360) % 360 {
+	switch rotation {
 	case 0:
 		return 1, true
 	case 90:
