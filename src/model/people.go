@@ -25,22 +25,6 @@ type AssetFaceResponse struct {
 	Person        *PersonResponse `json:"person"`
 }
 
-// CreateFaceRequest is the POST /faces payload that links a person to an asset
-// at a pixel box. The coordinates and image dimensions mirror what
-// GetAssetFaces returns, so a box read from one asset re-creates verbatim on
-// another. Immich records it with sourceType "manual", which survives later ML
-// detection jobs (Immich 1.127+).
-type CreateFaceRequest struct {
-	AssetID     string `json:"assetId"`
-	PersonID    string `json:"personId"`
-	X           int    `json:"x"`
-	Y           int    `json:"y"`
-	Width       int    `json:"width"`
-	Height      int    `json:"height"`
-	ImageWidth  int    `json:"imageWidth"`
-	ImageHeight int    `json:"imageHeight"`
-}
-
 // NamedVisibleName returns a person's write-eligible region name and whether
 // they have one: visible and named, mirroring what Immich itself is willing to
 // import from file regions. It is the single definition of that eligibility,
@@ -71,7 +55,10 @@ func NamedPeopleNames(asset AssetResponse) []string {
 // are written. It answers the presence question without allocating and sorting
 // the name list, for the per-asset -all pre-filter.
 func HasFaceRegionsToEmbed(asset AssetResponse) bool {
-	if IsVideoAsset(asset) {
+	// Videos carry MWG regions only in containers exiftool can write; the
+	// rotation-anchoring guard that decides whether a given video is embeddable
+	// runs later, once the file's Rotation tag is known.
+	if IsVideoAsset(asset) && !SupportsVideoMetadataEmbedding(asset) {
 		return false
 	}
 	for _, person := range asset.People {

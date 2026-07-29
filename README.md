@@ -143,7 +143,6 @@ On Immich 1.113+ you can scope the API key to exactly what the tool needs (older
 | `asset.delete`   | Trash the old original after a verified replacement             |
 | `album.read`     | Resolve `-album` / `-album all` selections                      |
 | `face.read`      | Fetch face boxes — only needed with `-faces`                    |
-| `face.create`    | Re-link people on a re-uploaded video — only with `-faces`      |
 
 Read-only modes need less: `-dry-run` and `-export-dir` never write to the server, so they only require `server.about`, `asset.read`, `asset.download`, and `album.read` (drop `album.read` too if you only pass asset IDs; add `face.read` if you combine them with `-faces`).
 
@@ -261,7 +260,7 @@ Images use the full tag set below. Supported video containers (`mp4`, `mov`, `m4
 | Location    | `IPTC:City`, `XMP-photoshop:City`, `IPTC:Province-State`, `XMP-photoshop:State`, `IPTC:Country-PrimaryLocationName`, `XMP-photoshop:Country` | Dual IPTC + XMP-photoshop                                                                                |
 | DateTime    | `DateTimeOriginal`, `OffsetTimeOriginal`, `TimeZoneOffset`, `XMP-exif:DateTimeOriginal`, `XMP-xmp:CreateDate`                                | See below; XMP uses ISO 8601                                                                             |
 | Camera      | `Make`, `Model`, `LensModel`                                                                                                                 | Only written if file has no existing value                                                               |
-| Faces       | `XMP-mwg-rs:RegionInfo` (MWG face regions)                                                                                                   | Opt-in via `-faces`; images embed MWG regions, videos re-link people via the API; see below              |
+| Faces       | `XMP-mwg-rs:RegionInfo` (MWG face regions)                                                                                                   | Opt-in via `-faces`; images and supported videos, named people only; see below                           |
 
 ### Face regions (`-faces`)
 
@@ -271,8 +270,8 @@ With `-faces`, every person you have **named** in Immich is written into the fil
 - Regions are written in the stored image's coordinate space, applying the exact inverse of the orientation transform Immich uses on import, so rotated photos round-trip correctly.
 - When the file's regions disagree with Immich, the whole `RegionInfo` structure is **replaced** — Immich is the source of truth, like for every other synced tag. When Immich has no named faces for an asset, existing file regions are left untouched (never cleared).
 - Round-trip bonus: with Immich's _"Import faces from metadata"_ server setting enabled, the names embedded by `-faces` are re-imported when the replaced file is scanned — face names survive the replace. Re-imported regions (`sourceType: exif`) are recognized as echoes of the file's own content and never counted next to a detected face of the same name (names are how the importer links regions to people), so repeated runs converge instead of duplicating regions.
-- **Videos** cannot carry MWG regions, so `-faces` preserves them a different way: after a video is re-uploaded, every assigned person on the old asset is re-linked to the new one over Immich's faces API (the same call the web UI's manual tagging uses). This covers unnamed clusters too, and needs **Immich 1.127+** — older servers are skipped with a warning. Without it, a re-uploaded video keeps its re-detected boxes but loses the person names.
-- The key needs the `face.read` permission, plus `face.create` for the video path (see [API key permissions](#api-key-permissions)).
+- **Supported videos** (`mp4`, `mov`, `m4v`) embed the same MWG regions as images — exiftool writes XMP into the container, and Immich re-imports them when _"Import faces from metadata"_ is enabled, exactly as for photos. Regions are anchored through the video's display `Rotation` (0°, 90°, 270°); a 180° or non-cardinal rotation is left un-embedded rather than risk a misplaced box, and other containers are skipped.
+- The key needs the `face.read` permission (see [API key permissions](#api-key-permissions)).
 - Incremental-cache caveats: the `-all` state cache keys on the set of _names_, so correcting a face's box or reassigning a face between two already-named people does not invalidate it — use `-force` to re-check. Toggling `-faces` on or off changes the cache key, so the first run after a toggle re-checks the library once.
 
 ### DateTime and timezone handling

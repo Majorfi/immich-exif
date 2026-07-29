@@ -17,11 +17,16 @@ func wantsFaceRegions(cfg *model.Config, asset model.AssetResponse) bool {
 // appendFaceRegionChange fetches the asset's face boxes and appends the
 // region rewrite when the file disagrees with Immich, returning the regions
 // being embedded (nil when the file already matches) so they can be re-checked
-// before upload. The file's own Orientation and pixel dimensions anchor the
+// before upload. The file's own orientation and pixel dimensions anchor the
 // regions, so this must run after the exif read. A file that reports no pixel
-// dimensions gets no regions rather than misanchored ones.
+// dimensions, or a video whose rotation cannot be safely anchored, gets no
+// regions rather than misanchored ones.
 func appendFaceRegionChange(client *api.ImmichClient, cfg *model.Config, asset model.AssetResponse, existing exif.ExifTagMap, changes []exif.TagChange) ([]exif.TagChange, []exif.FaceRegion, error) {
 	if !wantsFaceRegions(cfg, asset) {
+		return changes, nil, nil
+	}
+	orientation, ok := regionOrientation(asset, existing)
+	if !ok {
 		return changes, nil, nil
 	}
 	faces, err := client.GetAssetFaces(asset.ID)
@@ -31,13 +36,41 @@ func appendFaceRegionChange(client *api.ImmichClient, cfg *model.Config, asset m
 		}
 		return nil, nil, err
 	}
-	regions := exif.BuildFaceRegions(faces, intTag(existing, "Orientation"))
+	regions := exif.BuildFaceRegions(faces, orientation)
 	change := exif.CompareFaceRegions(regions, intTag(existing, "ImageWidth"), intTag(existing, "ImageHeight"), existing)
 	if change == nil {
 		return changes, nil, nil
 	}
 	changes = append(changes, *change)
 	return changes, regions, nil
+}
+
+// regionOrientation returns the EXIF-orientation value to anchor face regions
+// with, and whether they can be anchored at all. Images use their EXIF
+// Orientation. Videos have no EXIF Orientation; their display rotation is read
+// from the QuickTime Rotation tag and mapped to the equivalent orientation.
+func regionOrientation(asset model.AssetResponse, existing exif.ExifTagMap) (int, bool) {
+	if model.IsVideoAsset(asset) {
+		return videoRotationToOrientation(intTag(existing, "Rotation"))
+	}
+	return intTag(existing, "Orientation"), true
+}
+
+// videoRotationToOrientation maps a QuickTime display rotation to the EXIF
+// orientation whose inverse transform Immich applies to video regions on
+// import (verified against a live server): 0->1, 90->6, 270->8. A 180 or
+// non-cardinal rotation returns ok=false — Immich does not re-orient 180 video
+// regions the way it does 90/270, so those are skipped rather than misanchored.
+func videoRotationToOrientation(rotation int) (int, bool) {
+	switch ((rotation % 360) + 360) % 360 {
+	case 0:
+		return 1, true
+	case 90:
+		return 6, true
+	case 270:
+		return 8, true
+	}
+	return 0, false
 }
 
 // statusCodeOf extracts the HTTP status from an API error, reporting false when
@@ -51,114 +84,21 @@ func statusCodeOf(err error) (int, bool) {
 }
 
 // isPermissionDenied reports whether an API error carries a 401/403 status, the
-// signature of an API key missing a face permission (face.read for the GET,
-// face.create for the POST).
+// signature of an API key missing the face.read permission.
 func isPermissionDenied(err error) bool {
 	code, ok := statusCodeOf(err)
 	return ok && (code == http.StatusUnauthorized || code == http.StatusForbidden)
 }
 
-// isNotFound reports whether an API error carries a 404, which for the faces
-// endpoint means the server predates manual face tagging (Immich 1.127).
-func isNotFound(err error) bool {
-	code, ok := statusCodeOf(err)
-	return ok && code == http.StatusNotFound
-}
-
-// errFacePreserveUnsupported marks a server too old for the createFace endpoint
-// (introduced with manual face tagging in Immich 1.127). The caller warns and
-// keeps going instead of failing the replacement.
-var errFacePreserveUnsupported = errors.New("server does not support the faces endpoint (needs Immich 1.127+)")
-
-// recreateFaces re-links the source asset's assigned people onto the target
-// asset via POST /faces. It backs the video path of -faces: a video's regions
-// cannot be embedded as metadata, and on re-upload Immich re-detects boxes on
-// the new thumbnail but drops the person link. Every face carrying a person is
-// recreated verbatim (named or not — createFace requires a personId, so faces
-// with none are skipped); a person already linked on the target is left alone so
-// repeated runs do not stack duplicates. Returns the number of faces created.
-func recreateFaces(client *api.ImmichClient, sourceID, targetID string) (int, error) {
-	// A 404 on this first call means the server predates the faces endpoint
-	// (both the GET and the POST arrived with manual tagging in 1.127); the
-	// source asset always exists, so it is never a missing-asset 404. Skip with a
-	// warning instead of failing the replace. Past this point the endpoint is
-	// proven to exist, so a later 404 is a real error and stays fatal.
-	sourceFaces, err := client.GetAssetFaces(sourceID)
-	if err != nil {
-		if isNotFound(err) {
-			return 0, errFacePreserveUnsupported
-		}
-		return 0, err
-	}
-	pending := facesWithPerson(sourceFaces)
-	if len(pending) == 0 {
-		return 0, nil
-	}
-
-	targetFaces, err := client.GetAssetFaces(targetID)
-	if err != nil {
-		return 0, err
-	}
-	linked := linkedPersonIDs(targetFaces)
-
-	created := 0
-	for _, face := range pending {
-		if linked[face.Person.ID] {
-			continue
-		}
-		req := model.CreateFaceRequest{
-			AssetID:     targetID,
-			PersonID:    face.Person.ID,
-			X:           face.BoundingBoxX1,
-			Y:           face.BoundingBoxY1,
-			Width:       face.BoundingBoxX2 - face.BoundingBoxX1,
-			Height:      face.BoundingBoxY2 - face.BoundingBoxY1,
-			ImageWidth:  face.ImageWidth,
-			ImageHeight: face.ImageHeight,
-		}
-		if err := client.CreateFace(req); err != nil {
-			if isNotFound(err) {
-				return created, errFacePreserveUnsupported
-			}
-			return created, err
-		}
-		linked[face.Person.ID] = true
-		created++
-	}
-	return created, nil
-}
-
-// facesWithPerson keeps only the faces Immich has assigned to a person; a face
-// without one has no personId to re-link.
-func facesWithPerson(faces []model.AssetFaceResponse) []model.AssetFaceResponse {
-	var kept []model.AssetFaceResponse
-	for _, face := range faces {
-		if face.Person != nil && face.Person.ID != "" {
-			kept = append(kept, face)
-		}
-	}
-	return kept
-}
-
-// linkedPersonIDs is the set of people already having a face on an asset.
-func linkedPersonIDs(faces []model.AssetFaceResponse) map[string]bool {
-	linked := map[string]bool{}
-	for _, face := range faces {
-		if face.Person != nil && face.Person.ID != "" {
-			linked[face.Person.ID] = true
-		}
-	}
-	return linked
-}
-
 // faceRegionsStale reports whether the server's faces moved away from the
 // regions this run is about to embed.
-func faceRegionsStale(client *api.ImmichClient, assetID string, existing exif.ExifTagMap, written []exif.FaceRegion) (bool, error) {
-	faces, err := client.GetAssetFaces(assetID)
+func faceRegionsStale(client *api.ImmichClient, asset model.AssetResponse, existing exif.ExifTagMap, written []exif.FaceRegion) (bool, error) {
+	orientation, _ := regionOrientation(asset, existing)
+	faces, err := client.GetAssetFaces(asset.ID)
 	if err != nil {
 		return false, err
 	}
-	fresh := exif.BuildFaceRegions(faces, intTag(existing, "Orientation"))
+	fresh := exif.BuildFaceRegions(faces, orientation)
 	return !exif.FaceRegionsMatch(fresh, written, intTag(existing, "ImageWidth"), intTag(existing, "ImageHeight")), nil
 }
 

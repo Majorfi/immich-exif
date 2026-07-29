@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -55,46 +54,5 @@ func TestGetAssetFacesServerError(t *testing.T) {
 	c := NewImmichClient(server.URL, "key")
 	if _, err := c.GetAssetFaces("asset-1"); err == nil {
 		t.Fatal("expected error on server failure")
-	}
-}
-
-func TestCreateFace(t *testing.T) {
-	var received model.CreateFaceRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/faces" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-		w.WriteHeader(http.StatusCreated)
-	}))
-	defer server.Close()
-
-	c := NewImmichClient(server.URL, "key")
-	face := model.CreateFaceRequest{
-		AssetID: "new-asset", PersonID: "p1",
-		X: 100, Y: 50, Width: 200, Height: 200,
-		ImageWidth: 1000, ImageHeight: 500,
-	}
-	if err := c.CreateFace(face); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if received != face {
-		t.Fatalf("server received %+v, want %+v", received, face)
-	}
-}
-
-func TestCreateFaceUnsupportedEndpoint(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "not found", http.StatusNotFound)
-	}))
-	defer server.Close()
-
-	c := NewImmichClient(server.URL, "key")
-	err := c.CreateFace(model.CreateFaceRequest{AssetID: "a", PersonID: "p"})
-	var status *StatusError
-	if !errors.As(err, &status) || status.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected a 404 StatusError (server too old to skip gracefully), got %v", err)
 	}
 }

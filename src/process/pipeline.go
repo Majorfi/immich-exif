@@ -170,7 +170,7 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	// when no region is being written: the file already matched, so a mid-run
 	// face move is not ours to guard and must not block an unrelated exif write.
 	if len(faceRegions) > 0 {
-		stale, staleErr := faceRegionsStale(client, assetID, existing, faceRegions)
+		stale, staleErr := faceRegionsStale(client, *asset, existing, faceRegions)
 		if staleErr != nil {
 			return fail("re-check faces before upload: %v", staleErr)
 		}
