@@ -29,7 +29,9 @@ func appendFaceRegionChange(client *api.ImmichClient, cfg *model.Config, asset m
 		return changes, nil, "", nil
 	}
 	if !model.HasFaceRegionsToEmbed(asset) {
-		if model.IsVideoAsset(asset) {
+		// Only an unwritable container blames the container: a supported video
+		// with no named people must report that, not a false "unsupported" steer.
+		if model.IsUnsupportedVideoAsset(asset) {
 			return changes, nil, "this video container cannot hold face regions", nil
 		}
 		return changes, nil, "Immich lists no named, visible person on this asset", nil

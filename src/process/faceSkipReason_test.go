@@ -49,6 +49,14 @@ func TestAppendFaceRegionChangeExplainsEverySkip(t *testing.T) {
 			wantReason: "container cannot hold face regions",
 		},
 		{
+			// A writable container with nobody named must not be blamed on the
+			// container: that would send the user chasing the wrong problem.
+			name:       "supported video without named people",
+			asset:      model.AssetResponse{ID: "a", OriginalMimeType: "video/quicktime", OriginalFileName: "IMG_4827.MOV"},
+			tags:       sizedTags,
+			wantReason: "no named, visible person",
+		},
+		{
 			name:       "video rotated 180",
 			asset:      model.AssetResponse{ID: "a", OriginalMimeType: "video/mp4", People: namedPerson},
 			tags:       exif.ExifTagMap{"ImageWidth": float64(1920), "ImageHeight": float64(1080), "Rotation": float64(180)},
