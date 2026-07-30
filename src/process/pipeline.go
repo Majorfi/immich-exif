@@ -90,16 +90,25 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	}
 
 	changes := exif.CompareAssetMetadata(*asset, existing)
-	changes, faceRegions, err := appendFaceRegionChange(client, cfg, *asset, existing, changes)
+	changes, faceRegions, faceSkip, err := appendFaceRegionChange(client, cfg, *asset, existing, changes)
 	if err != nil {
 		return fail("fetch faces: %v", err)
 	}
 	exifArgs := exif.CollectExifArgs(changes)
 	if len(exifArgs) == 0 {
-		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "metadata already matches", ExifMatched: true}
+		message := "metadata already matches"
+		if faceSkip != "" {
+			message += "; no face regions written: " + faceSkip
+		}
+		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: message, ExifMatched: true}
 	}
 
 	diffEntries := exif.CollectDiffEntries(changes)
+	// Surface the reason inside the diff block: it is the one place a piped or
+	// -y run still prints, so "-faces wrote nothing" is never silent.
+	if faceSkip != "" {
+		diffEntries = append(diffEntries, model.DiffEntry{Tag: "Face regions", Symbol: model.DiffChange, Old: "(skipped)", New: faceSkip})
+	}
 	action := emitter.EmitDiff(model.DiffEvent{
 		AssetID:  assetID,
 		Filename: asset.OriginalFileName,

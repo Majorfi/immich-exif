@@ -21,28 +21,46 @@ func wantsFaceRegions(cfg *model.Config, asset model.AssetResponse) bool {
 // regions, so this must run after the exif read. A file that reports no pixel
 // dimensions, or a video whose rotation cannot be safely anchored, gets no
 // regions rather than misanchored ones.
-func appendFaceRegionChange(client *api.ImmichClient, cfg *model.Config, asset model.AssetResponse, existing exif.ExifTagMap, changes []exif.TagChange) ([]exif.TagChange, []exif.FaceRegion, error) {
-	if !wantsFaceRegions(cfg, asset) {
-		return changes, nil, nil
+// The third result is a human-readable reason when -faces was asked for but no
+// region could be written. Every guard below used to return silently, which made
+// a run that embedded nothing indistinguishable from one that had nothing to do.
+func appendFaceRegionChange(client *api.ImmichClient, cfg *model.Config, asset model.AssetResponse, existing exif.ExifTagMap, changes []exif.TagChange) ([]exif.TagChange, []exif.FaceRegion, string, error) {
+	if !cfg.Faces {
+		return changes, nil, "", nil
+	}
+	if !model.HasFaceRegionsToEmbed(asset) {
+		if model.IsVideoAsset(asset) {
+			return changes, nil, "this video container cannot hold face regions", nil
+		}
+		return changes, nil, "Immich lists no named, visible person on this asset", nil
 	}
 	orientation, ok := regionOrientation(asset, existing)
 	if !ok {
-		return changes, nil, nil
+		return changes, nil, fmt.Sprintf("video rotation %d° cannot be anchored (only 0°, 90° and 270° are)", intTag(existing, "Rotation")), nil
 	}
+	// The faces fetch stays ahead of the dimension guard so a missing face.read
+	// permission is still reported loudly, even for a file with no dimensions.
 	faces, err := client.GetAssetFaces(asset.ID)
 	if err != nil {
 		if isPermissionDenied(err) {
-			return nil, nil, fmt.Errorf("faces read denied — the -faces flag needs the API key's face.read permission: %w", err)
+			return nil, nil, "", fmt.Errorf("faces read denied — the -faces flag needs the API key's face.read permission: %w", err)
 		}
-		return nil, nil, err
+		return nil, nil, "", err
+	}
+	rasterWidth, rasterHeight := intTag(existing, "ImageWidth"), intTag(existing, "ImageHeight")
+	if rasterWidth <= 0 || rasterHeight <= 0 {
+		return changes, nil, "the file reports no pixel dimensions to anchor regions against", nil
 	}
 	regions := exif.BuildFaceRegions(faces, orientation)
-	change := exif.CompareFaceRegions(regions, intTag(existing, "ImageWidth"), intTag(existing, "ImageHeight"), existing)
+	if len(regions) == 0 {
+		return changes, nil, fmt.Sprintf("none of Immich's %d face box(es) carry a named person with dimensions", len(faces)), nil
+	}
+	change := exif.CompareFaceRegions(regions, rasterWidth, rasterHeight, existing)
 	if change == nil {
-		return changes, nil, nil
+		return changes, nil, "", nil
 	}
 	changes = append(changes, *change)
-	return changes, regions, nil
+	return changes, regions, "", nil
 }
 
 // regionOrientation returns the EXIF-orientation value to anchor face regions
