@@ -28,8 +28,6 @@ func NewWorkerPool(client *api.ImmichClient, uploader Uploader, cfg *model.Confi
 	}
 }
 
-// skipMessage explains to the assets that were never processed why the run
-// ended, so a key-permission stop is not reported as a user cancellation.
 func (wp *WorkerPool) skipMessage() string {
 	reason, ok := wp.stopReason.Load().(string)
 	if ok {

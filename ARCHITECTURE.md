@@ -8,13 +8,13 @@ The tool uses a verify-before-delete process:
 2. **POST /assets** — Upload the modified file as a new asset (forwarding `livePhotoVideoId` so live-photo pairs survive)
 3. **GET /assets/{id}** — By default, re-fetch the new asset and verify its stored checksum matches the local file. A mismatch aborts before any delete, leaving the original intact. Skipped with `-no-verify-upload`.
 4. **PUT /assets/copy** — Copy all associations (albums, favorites, shared links, sidecars, stacks) from old to new (no PATCH alias exists for this endpoint on v3.0.1)
-5. **GET /assets/{id}** + **PATCH /stacks/{id}** (PUT on legacy servers) — If the original was a stack's primary, hand that slot to the replacement; skipped entirely, at no request cost, for an asset outside a stack
+5. **GET /assets/{id}** + **PATCH /stacks/{id}** (PUT on legacy servers) — Promote the replacement if it takes a stack primary's place
 6. **PATCH /assets** (PUT on legacy servers) — Restore visibility if the original was archived or had non-default visibility
 7. **DELETE /assets** — Move the original to Immich's trash (`force=false`, recoverable). The delete is never permanent: checksum verification proves the transfer, not exiftool's output, so the trash window is kept as the recovery path.
 
-Step 5 works around an upstream soft-delete gap. `/assets/copy` adds the replacement to the stack but never touches `primaryAssetId`, and a trashed asset is only replaced as primary by the permanent-delete job — so a stack whose primary was replaced kept pointing at the trashed original. Immich's timeline query drops every asset that belongs to a stack it is not the primary of, which hid the whole stack, untouched siblings included, until the trash was purged (issue #34). The ordering is forced from both sides: the replacement only joins the stack at step 4, and Immich refuses a primary that is neither timeline- nor archive-visible, so the promotion has to happen while the upload still carries its default timeline visibility — before step 6 can restore a `hidden` original. Running it before the delete also means an interrupted run never leaves the stack headless. The stack is re-read from the new asset rather than trusted from the pre-copy snapshot: when the target already belonged to another stack, the copy merges the two and keeps the target's own primary, which must not be hijacked. Assets outside a stack cost no extra request. `-repair-stacks` fixes stacks already broken by earlier versions.
+Step 5 prevents a trashed primary from hiding its stack (issue #34). It runs before visibility restoration and deletion. `-repair-stacks` fixes existing stacks.
 
-Immich v3 deprecated PUT on the bulk asset update endpoint (removed in v4); the client sends PATCH there on v3+ and PUT on legacy servers, selected by `writeMethod()`. `/assets/copy` stays PUT everywhere: v3.0.1 has no PATCH alias for it — a PATCH is routed into `PATCH /assets/:id` and fails UUID validation (found by a live run). `/stacks/:id` is the opposite case: it registers both verbs (`@Put` deprecated in v3, `@Patch` since v3.0.0), so `writeMethod()` applies there.
+`writeMethod()` uses PATCH on v3+ and PUT on legacy servers. `/assets/copy` always uses PUT.
 
 Upload is sent as a streamed multipart request (chunked), so large files are not buffered fully in memory.
 

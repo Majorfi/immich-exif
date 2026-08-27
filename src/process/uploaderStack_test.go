@@ -12,7 +12,6 @@ import (
 	"github.com/majorfi/immich-exif/model"
 )
 
-// stackedAsset is an old asset that is the primary of stack-id.
 func stackedAsset(visibility string) *model.AssetResponse {
 	return &model.AssetResponse{
 		ID:               "old-id",
@@ -107,9 +106,6 @@ func TestModernUploaderSkipsStackPromotionForStackChild(t *testing.T) {
 	assertCalls(t, calls, []string{"POST /api/assets", "PUT /api/assets/copy", "DELETE /api/assets"})
 }
 
-// A copy onto a target that already belonged to another stack merges the two
-// and keeps the target stack's own primary; re-pointing it would hijack a stack
-// the replacement never led.
 func TestModernUploaderSkipsStackPromotionAfterStackMerge(t *testing.T) {
 	var calls []string
 
@@ -185,9 +181,6 @@ func TestModernUploaderDoesNotDeleteOldAssetWhenStackPromotionFails(t *testing.T
 	}
 }
 
-// A hidden original must be promoted while the replacement still carries the
-// upload's default timeline visibility: Immich refuses a primary that is
-// neither timeline- nor archive-visible.
 func TestModernUploaderPromotesStackPrimaryBeforeRestoringHiddenVisibility(t *testing.T) {
 	var calls []string
 

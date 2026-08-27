@@ -31,8 +31,6 @@ func (u *keyPermissionUploader) Upload(filePath string, asset *model.AssetRespon
 	return UploadOutcome{}, nonRetryable(fmt.Errorf("%w: the API key needs the stack.update permission", errKeyPermission))
 }
 
-// A missing key permission surfaces only after the replacement is uploaded, so
-// letting the run continue would orphan one upload per remaining asset.
 func TestWorkerPoolStopsTheRunOnAKeyPermissionFailure(t *testing.T) {
 	description := "Test Description"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

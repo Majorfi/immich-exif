@@ -22,7 +22,6 @@ func TestUpdateStackPrimaryUsesPatchOnV3AndPutOnLegacy(t *testing.T) {
 			var payload model.UpdateStackRequest
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// ResolveAPIMode probes /server/about even in forced modes.
 				if r.URL.Path == "/api/server/about" {
 					_, _ = w.Write([]byte(`{"version":"v3.1.0"}`))
 					return

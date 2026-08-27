@@ -117,8 +117,6 @@ func (u *ModernUploader) finalizeReplacement(filePath string, asset *model.Asset
 		return fmt.Errorf("copy associations failed (target asset %s exists but old %s NOT deleted): %w", targetID, asset.ID, err)
 	}
 
-	// Before the visibility restore: Immich refuses a primary that is not
-	// timeline- or archive-visible, and a fresh upload is always timeline.
 	if err := u.promoteStackPrimary(asset, targetID, emitter); err != nil {
 		return err
 	}
@@ -143,19 +141,11 @@ func (u *ModernUploader) finalizeReplacement(filePath string, asset *model.Asset
 	return nil
 }
 
-// promoteStackPrimary hands the replacement the stack primary slot the original
-// held. Immich only shows a stack's primary in the timeline, and trashing an
-// asset never promotes a new one — that happens in the permanent-delete job —
-// so without this the whole stack, siblings included, would vanish from the
-// timeline until the trash is purged.
 func (u *ModernUploader) promoteStackPrimary(asset *model.AssetResponse, targetID string, emitter model.EventEmitter) error {
 	if asset.Stack == nil || asset.Stack.PrimaryAssetID != asset.ID {
 		return nil
 	}
 
-	// The copy may have merged the original's stack into one the target already
-	// belonged to, which keeps the target stack's own primary and drops the
-	// source stack; re-read instead of trusting the pre-copy stack ID.
 	stacked, err := u.Client.GetAsset(targetID)
 	if err != nil {
 		return fmt.Errorf("fetch stack of new asset %s failed (target asset %s exists but old %s NOT deleted): %w", model.ShortID(targetID), targetID, asset.ID, err)
@@ -174,10 +164,6 @@ func (u *ModernUploader) promoteStackPrimary(asset *model.AssetResponse, targetI
 	return nil
 }
 
-// errKeyPermission marks a failure the API key itself causes. Such a failure
-// repeats identically on every asset, and it surfaces only after the
-// replacement has been uploaded, so the run stops instead of leaving one
-// orphaned upload behind per remaining asset.
 var errKeyPermission = errors.New("api key permission denied")
 
 // nonRetryableError marks a failure that happened after a new asset was already

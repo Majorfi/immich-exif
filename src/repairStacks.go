@@ -10,11 +10,6 @@ import (
 	"github.com/majorfi/immich-exif/model"
 )
 
-// repairStacks re-points stacks that lost their primary asset. Immich shows
-// only the primary of a stack in the timeline, and a trashed asset keeps the
-// primary slot until Immich purges it. An older version of this tool trashed
-// the primary without moving the slot. This hides the full stack, including
-// the assets the tool did not touch.
 func repairStacks(client *api.ImmichClient, cfg *model.Config) int {
 	stacks, err := client.ListStacks()
 	if err != nil {
@@ -87,19 +82,10 @@ type stackScan struct {
 	unreadable []unreadablePrimary
 }
 
-// scanStacks sorts stacks into those needing a new primary, those with no live
-// member left to promote, and those whose primary cannot be read. A single
-// unreadable primary must not sink the whole scan: an asset with `locked`
-// visibility is invisible to an API key (Immich excludes it from owner access
-// unless the session holds an elevated permission), so aborting there would
-// make the mode fail permanently on any library holding one.
 func scanStacks(client *api.ImmichClient, stacks []model.StackResponse) stackScan {
 	var scan stackScan
 
 	for _, stack := range stacks {
-		// The server already filters this list to live members with timeline or
-		// archive visibility, so a primary missing from it is trashed, hidden or
-		// locked.
 		if containsAssetID(stack.Assets, stack.PrimaryAssetID) {
 			continue
 		}
@@ -112,9 +98,6 @@ func scanStacks(client *api.ImmichClient, stacks []model.StackResponse) stackSca
 			})
 			continue
 		}
-		// A hidden primary is absent from the list too, and its stack is meant
-		// to stay out of the timeline; promoting over it would surface what the
-		// owner deliberately hid.
 		if !primary.IsTrashed {
 			continue
 		}
@@ -122,8 +105,6 @@ func scanStacks(client *api.ImmichClient, stacks []model.StackResponse) stackSca
 			scan.emptied = append(scan.emptied, stack.ID)
 			continue
 		}
-		// Assets come ordered by fileCreatedAt ascending, so the first one is
-		// what Immich itself promotes when it purges a trashed primary.
 		scan.broken = append(scan.broken, stackRepair{
 			stackID:          stack.ID,
 			trashedPrimaryID: stack.PrimaryAssetID,

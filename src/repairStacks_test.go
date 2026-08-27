@@ -103,8 +103,6 @@ func TestRepairStacksLeavesHealthyStackAlone(t *testing.T) {
 	}
 }
 
-// A hidden or locked primary is missing from the stack's asset list just like a
-// trashed one, but its stack is meant to stay out of the timeline.
 func TestRepairStacksLeavesHiddenPrimaryAlone(t *testing.T) {
 	fixture := &stackFixture{
 		stacks: `[{"id":"stack-id","primaryAssetId":"hidden-id","assets":[{"id":"sibling-id"}]}]`,
@@ -144,9 +142,6 @@ func TestRepairStacksDryRunWritesNothing(t *testing.T) {
 	}
 }
 
-// An asset with `locked` visibility is invisible to an API key, so its stack is
-// absent from the asset list AND unreadable. Aborting there would make the mode
-// fail permanently on any library holding one.
 func TestRepairStacksSkipsUnreadablePrimaryAndRepairsTheRest(t *testing.T) {
 	fixture := &stackFixture{
 		stacks: `[{"id":"locked-stack","primaryAssetId":"locked-id","assets":[{"id":"sibling-id"}]},` +
@@ -185,8 +180,6 @@ func TestConfirmRepairStacksRefusesAnythingElse(t *testing.T) {
 	}
 }
 
-// Without -y the mode must ask, and a declined prompt must leave every stack
-// untouched.
 func TestRepairStacksDeclinedAtThePromptWritesNothing(t *testing.T) {
 	stdio, err := os.CreateTemp(t.TempDir(), "stdio")
 	if err != nil {
@@ -230,7 +223,6 @@ func TestRepairStacksReturnsOneWhenListingStacksFails(t *testing.T) {
 	}
 }
 
-// One rejected write must not abandon the stacks that follow it.
 func TestRepairStacksReportsFailedWritesAndKeepsGoing(t *testing.T) {
 	fixture := &stackFixture{
 		stacks: `[{"id":"denied-stack","primaryAssetId":"old-a","assets":[{"id":"live-a","originalFileName":"a.jpg"}]},` +

@@ -23,8 +23,6 @@ type AssetResponse struct {
 	Stack            *AssetStack      `json:"stack"`
 }
 
-// AssetStack is the stack block GET /assets/{id} inlines; the search endpoints
-// do not return it.
 type AssetStack struct {
 	ID             string `json:"id"`
 	PrimaryAssetID string `json:"primaryAssetId"`

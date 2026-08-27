@@ -10,8 +10,6 @@ import (
 	"github.com/majorfi/immich-exif/api"
 )
 
-// A non-permission failure must not be blamed on the key's permissions, and
-// must not stop the run: it may well succeed on the next asset.
 func TestModernUploaderStackPromotionServerErrorDoesNotBlamePermission(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
@@ -45,8 +43,6 @@ func TestModernUploaderStackPromotionServerErrorDoesNotBlamePermission(t *testin
 	}
 }
 
-// A denied promotion repeats identically on every remaining asset, so it has to
-// stop the run rather than orphan one upload per asset.
 func TestModernUploaderStackPromotionDeniedMarksKeyPermission(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
@@ -77,8 +73,6 @@ func TestModernUploaderStackPromotionDeniedMarksKeyPermission(t *testing.T) {
 	}
 }
 
-// The stack re-read is the only source of truth about where the replacement
-// landed, so losing it must stop short of the trash rather than guess.
 func TestModernUploaderDoesNotDeleteOldAssetWhenTheStackReadFails(t *testing.T) {
 	deleted := false
 

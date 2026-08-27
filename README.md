@@ -212,9 +212,7 @@ immich-exif -list-albums
 
 ### Repairing stacks hidden by an older version
 
-Immich only shows a stack's primary asset in the timeline, and trashing an asset does not promote a new primary — that only happens when the trash is purged. Versions before this fix replaced a stack's primary without handing the slot to the replacement, so the stack stayed pointed at the trashed original and disappeared from the timeline and from Recently Added, siblings included. The photos were never lost: opening one by URL worked, and unstacking brought it back.
-
-`-repair-stacks` re-points those stacks at a live member and exits. It skips stacks that are healthy, whose primary is merely hidden rather than trashed, that have no live member left to promote, or whose primary it cannot read at all — an asset with `locked` visibility is invisible to an API key, and one of those must not sink the whole scan. Skipped stacks are reported on stderr. Combine it with `-dry-run` to see what it would change:
+`-repair-stacks` promotes a live member when a stack's primary is trashed. Use `-dry-run` to preview changes:
 
 ```bash
 immich-exif -repair-stacks -dry-run
