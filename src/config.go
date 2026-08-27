@@ -50,6 +50,7 @@ func parseConfig() (*model.Config, error) {
 	flag.BoolVar(&noVerifyUpload, "no-verify-upload", false, "Skip checksum verification of the uploaded copy before the original is moved to Immich trash")
 	flag.BoolVar(&allowHTTP, "allow-http", false, "Allow a plaintext http:// server URL (the API key is sent in clear text)")
 	flag.BoolVar(&cfg.ListAlbums, "list-albums", false, "List your albums (ID and name) and exit")
+	flag.BoolVar(&cfg.RepairStacks, "repair-stacks", false, "Re-point stacks whose primary asset is in the trash to a live member, and exit")
 	flag.BoolVar(&showVersion, "version", false, "Print the version and exit")
 
 	flag.BoolVar(&cfg.ResolveDuplicate, "resolve-duplicate", false, "Resolve duplicate upload status by copying associations to the duplicate asset and trashing the old one")
@@ -118,7 +119,7 @@ func parseConfig() (*model.Config, error) {
 		fmt.Fprintf(os.Stderr, "Warning: IMMICH_URL comes from ./.env but your API key does not; make sure this .env is yours (%s)\n", model.SanitizeForTerminal(cfg.URL))
 	}
 
-	if cfg.ListAlbums {
+	if cfg.ListAlbums || cfg.RepairStacks {
 		return cfg, nil
 	}
 

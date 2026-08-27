@@ -20,6 +20,24 @@ type AssetResponse struct {
 	LibraryID        string           `json:"libraryId"`
 	ExifInfo         *ExifInfo        `json:"exifInfo"`
 	People           []PersonResponse `json:"people"`
+	Stack            *AssetStack      `json:"stack"`
+}
+
+// AssetStack is the stack block GET /assets/{id} inlines; the search endpoints
+// do not return it.
+type AssetStack struct {
+	ID             string `json:"id"`
+	PrimaryAssetID string `json:"primaryAssetId"`
+}
+
+type StackResponse struct {
+	ID             string          `json:"id"`
+	PrimaryAssetID string          `json:"primaryAssetId"`
+	Assets         []AssetResponse `json:"assets"`
+}
+
+type UpdateStackRequest struct {
+	PrimaryAssetID string `json:"primaryAssetId"`
 }
 
 type ExifInfo struct {
@@ -108,6 +126,7 @@ type ProcessResult struct {
 	NewID       string
 	DuplicateID string
 	Cancelled   bool
+	StopReason  string
 	ExifMatched bool
 }
 
@@ -147,6 +166,7 @@ type Config struct {
 	RenamePattern string
 
 	ListAlbums            bool
+	RepairStacks          bool
 	ResolveDuplicate      bool
 	IncludeNoAlbum        bool
 	AssetIDs              []string

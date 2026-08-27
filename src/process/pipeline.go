@@ -218,7 +218,11 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 		}
 	}
 	if uploadErr != nil {
-		return fail("upload (after %d attempts): %v", attempt, uploadErr)
+		result := fail("upload (after %d attempts): %v", attempt, uploadErr)
+		if errors.Is(uploadErr, errKeyPermission) {
+			result.StopReason = "run stopped: the API key is missing a permission every remaining asset needs"
+		}
+		return result
 	}
 
 	if !uploadOutcome.Cacheable {

@@ -141,8 +141,10 @@ On Immich 1.113+ you can scope the API key to exactly what the tool needs (older
 | `asset.copy`     | Copy associations (albums, favorites, …) to the new asset       |
 | `asset.update`   | Restore visibility for archived or hidden assets                |
 | `asset.delete`   | Trash the old original after a verified replacement             |
+| `stack.update`   | Hand the replacement the stack primary slot the original held   |
 | `album.read`     | Resolve `-album` / `-album all` selections                      |
 | `face.read`      | Fetch face boxes — only needed with `-faces`                    |
+| `stack.read`     | List stacks — only needed with `-repair-stacks`                 |
 
 Read-only modes need less: `-dry-run` and `-export-dir` never write to the server, so they only require `server.about`, `asset.read`, `asset.download`, and `album.read` (drop `album.read` too if you only pass asset IDs; add `face.read` if you combine them with `-faces`).
 
@@ -166,6 +168,7 @@ immich-exif [flags] [asset-ids...]
 | `-no-verify-upload`  | `false`           | Skip the post-upload checksum verification that gates the replacement                                      |
 | `-allow-http`        | `false`           | Allow a plaintext `http://` server URL (the API key is sent in clear text)                                 |
 | `-list-albums`       | `false`           | List your albums (ID and name) and exit                                                                    |
+| `-repair-stacks`     | `false`           | Re-point stacks whose primary asset is in the trash to a live member, and exit                             |
 | `-resolve-duplicate` | `false`           | On duplicate upload status, copy associations to the duplicate asset and trash the old one                 |
 | `-include-no-album`  | `true`            | With album-mirrored export, include assets with no album under `no-album/`                                 |
 | `-all`               | `false`           | Select the all-assets mode (timeline, archived and hidden; external-library assets only on read-only runs) |
@@ -206,6 +209,17 @@ immich-exif -list-albums
 ```
 
 `-all` and `-album all` are equivalent selectors. The tool still only exports/processes assets that pass its normal filters.
+
+### Repairing stacks hidden by an older version
+
+Immich only shows a stack's primary asset in the timeline, and trashing an asset does not promote a new primary — that only happens when the trash is purged. Versions before this fix replaced a stack's primary without handing the slot to the replacement, so the stack stayed pointed at the trashed original and disappeared from the timeline and from Recently Added, siblings included. The photos were never lost: opening one by URL worked, and unstacking brought it back.
+
+`-repair-stacks` re-points those stacks at a live member and exits. It skips stacks that are healthy, whose primary is merely hidden rather than trashed, that have no live member left to promote, or whose primary it cannot read at all — an asset with `locked` visibility is invisible to an API key, and one of those must not sink the whole scan. Skipped stacks are reported on stderr. Combine it with `-dry-run` to see what it would change:
+
+```bash
+immich-exif -repair-stacks -dry-run
+immich-exif -repair-stacks
+```
 
 ### Examples
 
