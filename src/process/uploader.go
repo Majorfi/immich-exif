@@ -1,6 +1,7 @@
 package process
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -116,6 +117,10 @@ func (u *ModernUploader) finalizeReplacement(filePath string, asset *model.Asset
 		return fmt.Errorf("copy associations failed (target asset %s exists but old %s NOT deleted): %w", targetID, asset.ID, err)
 	}
 
+	if err := u.promoteStackPrimary(asset, targetID, emitter); err != nil {
+		return err
+	}
+
 	visibility := desiredVisibility(asset)
 	if visibility != "" {
 		emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Restoring %s visibility on %s...", visibility, model.ShortID(targetID))})
@@ -135,6 +140,31 @@ func (u *ModernUploader) finalizeReplacement(filePath string, asset *model.Asset
 	}
 	return nil
 }
+
+func (u *ModernUploader) promoteStackPrimary(asset *model.AssetResponse, targetID string, emitter model.EventEmitter) error {
+	if asset.Stack == nil || asset.Stack.PrimaryAssetID != asset.ID {
+		return nil
+	}
+
+	stacked, err := u.Client.GetAsset(targetID)
+	if err != nil {
+		return fmt.Errorf("fetch stack of new asset %s failed (target asset %s exists but old %s NOT deleted): %w", model.ShortID(targetID), targetID, asset.ID, err)
+	}
+	if stacked.Stack == nil || stacked.Stack.PrimaryAssetID != asset.ID {
+		return nil
+	}
+
+	emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Promoting %s as stack primary...", model.ShortID(targetID))})
+	if err := u.Client.UpdateStackPrimary(stacked.Stack.ID, targetID); err != nil {
+		if isPermissionDenied(err) {
+			return fmt.Errorf("%w: promoting %s as stack primary was denied, the API key needs the stack.update permission (target asset %s exists but old %s NOT deleted): %w", errKeyPermission, model.ShortID(targetID), targetID, asset.ID, err)
+		}
+		return fmt.Errorf("promote %s as stack primary failed (target asset %s exists but old %s NOT deleted): %w", model.ShortID(targetID), targetID, asset.ID, err)
+	}
+	return nil
+}
+
+var errKeyPermission = errors.New("api key permission denied")
 
 // nonRetryableError marks a failure that happened after a new asset was already
 // created on the server; retrying the whole upload would risk duplicates or an

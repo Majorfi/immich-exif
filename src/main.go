@@ -44,13 +44,16 @@ func run() int {
 
 	warnCredentialHygiene()
 
-	if cfg.ListAlbums {
+	if cfg.ListAlbums || cfg.RepairStacks {
 		client := api.NewImmichClient(cfg.URL, cfg.APIKey)
 		if err := client.ResolveAPIMode(cfg.ImmichAPI); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: cannot reach Immich server: %v\n", err)
 			return 1
 		}
-		return listAlbums(client)
+		if cfg.ListAlbums {
+			return listAlbums(client)
+		}
+		return repairStacks(client, cfg)
 	}
 
 	if err := exif.CheckExiftoolFn(); err != nil {

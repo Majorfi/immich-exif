@@ -20,6 +20,22 @@ type AssetResponse struct {
 	LibraryID        string           `json:"libraryId"`
 	ExifInfo         *ExifInfo        `json:"exifInfo"`
 	People           []PersonResponse `json:"people"`
+	Stack            *AssetStack      `json:"stack"`
+}
+
+type AssetStack struct {
+	ID             string `json:"id"`
+	PrimaryAssetID string `json:"primaryAssetId"`
+}
+
+type StackResponse struct {
+	ID             string          `json:"id"`
+	PrimaryAssetID string          `json:"primaryAssetId"`
+	Assets         []AssetResponse `json:"assets"`
+}
+
+type UpdateStackRequest struct {
+	PrimaryAssetID string `json:"primaryAssetId"`
 }
 
 type ExifInfo struct {
@@ -108,6 +124,7 @@ type ProcessResult struct {
 	NewID       string
 	DuplicateID string
 	Cancelled   bool
+	StopReason  string
 	ExifMatched bool
 }
 
@@ -147,6 +164,7 @@ type Config struct {
 	RenamePattern string
 
 	ListAlbums            bool
+	RepairStacks          bool
 	ResolveDuplicate      bool
 	IncludeNoAlbum        bool
 	AssetIDs              []string

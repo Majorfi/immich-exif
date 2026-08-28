@@ -8,10 +8,13 @@ The tool uses a verify-before-delete process:
 2. **POST /assets** — Upload the modified file as a new asset (forwarding `livePhotoVideoId` so live-photo pairs survive)
 3. **GET /assets/{id}** — By default, re-fetch the new asset and verify its stored checksum matches the local file. A mismatch aborts before any delete, leaving the original intact. Skipped with `-no-verify-upload`.
 4. **PUT /assets/copy** — Copy all associations (albums, favorites, shared links, sidecars, stacks) from old to new (no PATCH alias exists for this endpoint on v3.0.1)
-5. **PATCH /assets** (PUT on legacy servers) — Restore visibility if the original was archived or had non-default visibility
-6. **DELETE /assets** — Move the original to Immich's trash (`force=false`, recoverable). The delete is never permanent: checksum verification proves the transfer, not exiftool's output, so the trash window is kept as the recovery path.
+5. **GET /assets/{id}** + **PATCH /stacks/{id}** (PUT on legacy servers) — Promote the replacement if it takes a stack primary's place
+6. **PATCH /assets** (PUT on legacy servers) — Restore visibility if the original was archived or had non-default visibility
+7. **DELETE /assets** — Move the original to Immich's trash (`force=false`, recoverable). The delete is never permanent: checksum verification proves the transfer, not exiftool's output, so the trash window is kept as the recovery path.
 
-Immich v3 deprecated PUT on the bulk asset update endpoint (removed in v4); the client sends PATCH there on v3+ and PUT on legacy servers, selected by `writeMethod()`. `/assets/copy` stays PUT everywhere: v3.0.1 has no PATCH alias for it — a PATCH is routed into `PATCH /assets/:id` and fails UUID validation (found by a live run).
+Step 5 prevents a trashed primary from hiding its stack (issue #34). It runs before visibility restoration and deletion. `-repair-stacks` fixes existing stacks.
+
+`writeMethod()` uses PATCH on v3+ and PUT on legacy servers. `/assets/copy` always uses PUT.
 
 Upload is sent as a streamed multipart request (chunked), so large files are not buffered fully in memory.
 

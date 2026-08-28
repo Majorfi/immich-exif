@@ -9,12 +9,13 @@ import (
 )
 
 type WorkerPool struct {
-	client    *api.ImmichClient
-	uploader  Uploader
-	cfg       *model.Config
-	emitter   model.EventEmitter
-	workers   int
-	cancelled atomic.Bool
+	client     *api.ImmichClient
+	uploader   Uploader
+	cfg        *model.Config
+	emitter    model.EventEmitter
+	workers    int
+	cancelled  atomic.Bool
+	stopReason atomic.Value
 }
 
 func NewWorkerPool(client *api.ImmichClient, uploader Uploader, cfg *model.Config, emitter model.EventEmitter) *WorkerPool {
@@ -25,6 +26,14 @@ func NewWorkerPool(client *api.ImmichClient, uploader Uploader, cfg *model.Confi
 		emitter:  emitter,
 		workers:  cfg.Workers,
 	}
+}
+
+func (wp *WorkerPool) skipMessage() string {
+	reason, ok := wp.stopReason.Load().(string)
+	if ok {
+		return reason
+	}
+	return "user cancelled"
 }
 
 func (wp *WorkerPool) Process(assetIDs []string) []model.ProcessResult {
@@ -43,12 +52,15 @@ func (wp *WorkerPool) Process(assetIDs []string) []model.ProcessResult {
 			defer wg.Done()
 			for idx := range jobs {
 				if wp.cancelled.Load() {
-					emitResult(idx, model.ProcessResult{AssetID: assetIDs[idx], Status: model.StatusSkipped, Message: "user cancelled"})
+					emitResult(idx, model.ProcessResult{AssetID: assetIDs[idx], Status: model.StatusSkipped, Message: wp.skipMessage()})
 					continue
 				}
 				result := ProcessAsset(wp.client, wp.uploader, wp.cfg, assetIDs[idx], idx+1, total, wp.emitter, wp.cancelled.Load)
 				emitResult(idx, result)
-				if result.Cancelled {
+				if result.StopReason != "" {
+					wp.stopReason.Store(result.StopReason)
+				}
+				if result.Cancelled || result.StopReason != "" {
 					wp.cancelled.Store(true)
 				}
 			}
@@ -57,7 +69,7 @@ func (wp *WorkerPool) Process(assetIDs []string) []model.ProcessResult {
 
 	for i := range assetIDs {
 		if wp.cancelled.Load() {
-			emitResult(i, model.ProcessResult{AssetID: assetIDs[i], Status: model.StatusSkipped, Message: "user cancelled"})
+			emitResult(i, model.ProcessResult{AssetID: assetIDs[i], Status: model.StatusSkipped, Message: wp.skipMessage()})
 			continue
 		}
 		jobs <- i
