@@ -118,6 +118,11 @@ type UploadResponse struct {
 	Status string `json:"status"`
 }
 
+type PathMapping struct {
+	Server string
+	Local  string
+}
+
 func (c *Config) BakesEdits(asset AssetResponse) bool {
 	return c.ApplyEdits && asset.IsEdited
 }
@@ -171,6 +176,7 @@ type Config struct {
 	VerifyUpload bool
 	Faces        bool
 	ApplyEdits   bool
+	InPlaceMaps  []PathMapping
 
 	Rename        bool
 	RenamePattern string

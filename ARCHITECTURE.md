@@ -18,6 +18,10 @@ Step 7 prevents a trashed primary from hiding its stack (issue #34). It runs bef
 
 With `-apply-edits`, an edited image is baked instead: the original is downloaded (checksum-verified, as the metadata source) along with Immich's render (`GET /assets/{id}/original?edited=true`). The render is already oriented, cropped, rotated and mirrored, and carries no EXIF. Immich serves the original instead when no render exists, so bytes matching the original's checksum are refused. While a new render is generated, Immich keeps serving the previous one, and no API reports which edits a render belongs to. Three guards cover that window. An asset whose `updatedAt` is less than a minute old on the server's clock (`Date` header of `/server/ping`) is skipped, since every edit and every finished render bumps it. The render's pixel size must equal the size the current edits produce on the server's oriented dimensions (crop size, axes swapped by a quarter turn), mirroring Immich's `getOutputDimensions`. And the render's content is checked against the unedited preview (`GET /assets/{id}/thumbnail?size=preview&edited=false`): a 24×24 grid of the render is mapped back through the edits (Immich applies them in list order after the crop; `rotate` turns clockwise, a `horizontal` mirror flips left-right) onto the preview, and the mean colour difference must stay under 12 (0-255), with none of the seven other orientations fitting clearly better. Measured on real renders, a current render scores 0.2-0.3 (6 on pure noise) and a stale mirror or turn 19-83; a live stale render, produced by pausing Immich's editor queue, scored 73.8 and was refused. JPEG XL renders cannot be decoded and are skipped. The original's metadata is copied onto the render without the tags that describe the original's pixels, and the render then goes through the normal diff, write and replace path. Face boxes need no remapping: for an edited asset, `GET /api/faces` already returns them on the edited image. A baked replacement is copied without the sidecar (`sidecar: false` on `/assets/copy`). Immich merges sidecar tags over the file's, and a foreign sidecar's orientation, dimensions (`tiff:ImageWidth`, verified live: a 800x500 bake registered as 1200x800 with its sidecar) or regions describe the pre-edit image; no endpoint serves a sidecar, so it cannot be cleaned and kept. Immich's tags, which otherwise survive a replace through that sidecar, are written into the file as `XMP-digiKam:TagsList` (the list Immich's importer reads first), and the pre-upload re-check skips the asset if they changed mid-run, since tag changes do not bump `updatedAt`. A duplicate resolution onto an asset carrying edits the replacement would not reproduce is refused, and an `-apply-edits` run refuses to start unless the server confirms its trash is enabled.
 
+External-library assets carry a path checksum (SHA-1 of `path:` plus `originalPath`), not a content hash. The tool recognises one by recomputing it, since Immich 3.3 does not expose `checksumAlgorithm`, and then checks the download by Content-Length only.
+
+With `-in-place-map SERVER=LOCAL`, an external asset under a mapped path is updated in place instead of replaced. The pipeline still downloads it, and the mapped local file must be byte-identical to that download before anything else happens. The usual diff and tag write run on the temporary copy. In place of the upload, the commit re-checks the sidecars and the local file (no symlink under the root, one hard link, owned by the running user, same inode, size, mtime and SHA-1 as when read). It then writes the rewritten copy to a hidden sibling, fsyncs it, renames it over the original and fsyncs the directory. Last, it asks Immich to re-read the file (`POST /assets/jobs` `refresh-metadata`) until `fileModifiedAt` changes, repeating the request every ten seconds because a network or Docker file share can serve Immich stale attributes right after the rename. A sidecar Immich would apply over the file is read and compared with Immich's values: one that disagrees skips the asset, while the sidecar Immich itself writes for edited external files agrees and passes. Sidecars come from `GET /asset-files` (Immich 3.2+) plus the `<file>.xmp` and `<stem>.xmp` names. Nothing after the rename is retried, and the result is not cached, so the next run re-checks the file once.
+
 `writeMethod()` uses PATCH on v3+ and PUT on legacy servers. `/assets/copy` always uses PUT.
 
 Upload is sent as a streamed multipart request (chunked), so large files are not buffered fully in memory.
@@ -104,6 +108,7 @@ src/
     faces.go          Face boxes for one asset
     edits.go          Immich editor edits and the edited render
     download.go       Streamed, watchdog-guarded downloads
+    inplace.go        Sidecar listing and metadata refresh for in-place updates
     search.go         Search, list albums, paginated asset listing
 
   state/
@@ -115,6 +120,9 @@ src/
     edits.go          Baking edits (-apply-edits) and carrying them to replacements
     renderCheck.go    Checks an edited render's content against the unedited preview
     export.go         Export-mode file copies
+    replace.go        Upload with retries and the replace outcome
+    inplace.go        In-place updates of external-library files (-in-place-map)
+    replaceFile.go    Atomic swap of a library file
     worker.go         Worker pool with cancellation
     uploader.go       Upload interface and ModernUploader
     verify.go         Post-upload checksum verification
@@ -134,6 +142,8 @@ src/
 | GET         | `/api/assets/{id}/original?edited=true` | Download Immich's edited render (only with `-apply-edits`)   |
 | GET / PUT   | `/api/assets/{id}/edits`                | Read edits; re-apply them to the replacement                 |
 | GET         | `/api/faces`                            | Face boxes for one asset (only with `-faces`)                |
+| GET         | `/api/asset-files`                      | An asset's sidecars (only with `-in-place-map`)              |
+| POST        | `/api/assets/jobs`                      | Ask Immich to re-read a file updated in place                |
 | POST        | `/api/assets`                           | Upload new asset (multipart)                                 |
 | PATCH / PUT | `/api/assets`                           | Update asset visibility (PATCH on v3+, PUT on legacy)        |
 | PUT         | `/api/assets/copy`                      | Copy associations between assets (no PATCH alias on v3)      |

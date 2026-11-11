@@ -31,7 +31,7 @@ The destructive path is the careful path. By default the tool will not delete an
 - **Trash, never permanent delete** — the replaced original always goes to Immich's **trash**, where it stays recoverable. Checksum verification proves the transfer was intact, not that exiftool produced a valid file, so the trash window is kept as the last-resort recovery path.
 - **Live photos stay paired** — the still's `livePhotoVideoId` is forwarded on re-upload, and hidden videos (live-photo motion parts) are skipped rather than replaced, which would sever the pair.
 - **Mid-run edits are respected** — the asset is re-checked right before upload; if its metadata changed on the server while the tool was working, it is skipped instead of overwritten.
-- **External libraries are protected** — replacing an external-library asset would migrate a copy into Immich's internal library (and duplicate it at the next scan), so those assets are skipped on replace runs. `-dry-run` and `-export-dir` still cover them.
+- **External libraries are protected** — replacing an external-library asset would migrate a copy into Immich's internal library (and duplicate it at the next scan), so those assets are skipped on replace runs. `-dry-run` and `-export-dir` still cover them (Immich hashes an external file's path, not its content, so their downloads are checked by size only), and `-in-place-map` updates them in place (see [below](#updating-external-libraries-in-place--in-place-map)).
 - **Immich edits survive** — Immich's editor keeps crops, rotations and mirrors apart from the file, and does not copy them to a new asset. The replacement gets the original's edits re-applied before the original is trashed; if that fails, the original stays. `-apply-edits` bakes them into the file instead (see [below](#baking-immich-edits--apply-edits)).
 - **Face regions are opt-in** — `-faces` replaces the file's `XMP-mwg-rs` region structure with Immich's named people; without the flag, region metadata is never touched.
 - **Trash disabled on the server?** The tool warns you loudly: without the trash feature there is no recovery window. `-apply-edits` refuses to run unless the server confirms its trash is enabled, since the unedited original would be lost for good.
@@ -42,19 +42,20 @@ An interruption (Ctrl-C) or a failed step leaves a duplicate, never a hole: the 
 
 ## Quick wins
 
-| Scenario                                                    | Command                                                 |
-| ----------------------------------------------------------- | ------------------------------------------------------- |
-| I want to test one photo safely                             | `immich-exif -dry-run <asset-id>`                       |
-| I want to process one album interactively                   | `immich-exif -album <album-id>`                         |
-| I want to process everything without prompts                | `immich-exif -y -all`                                   |
-| I want to process everything faster (4 workers)             | `immich-exif -y -workers 4 -all`                        |
-| I want eligible files exported to album folders (no upload) | `immich-exif -y -export-dir ./out -all`                 |
-| I want to export one album in its own folder                | `immich-exif -y -export-dir ./export -album <album-id>` |
-| I want to export all albums                                 | `immich-exif -y -export-dir ./export -album all`        |
-| I want duplicates auto-resolved                             | `immich-exif -y -resolve-duplicate -album <album-id>`   |
-| I want to ignore cache and re-check everything              | `immich-exif -y -force -all`                            |
-| I want named people written as face regions too             | `immich-exif -y -faces -all`                            |
-| I want Immich crops and rotations baked into the files      | `immich-exif -y -apply-edits -all`                      |
+| Scenario                                                    | Command                                                         |
+| ----------------------------------------------------------- | --------------------------------------------------------------- |
+| I want to test one photo safely                             | `immich-exif -dry-run <asset-id>`                               |
+| I want to process one album interactively                   | `immich-exif -album <album-id>`                                 |
+| I want to process everything without prompts                | `immich-exif -y -all`                                           |
+| I want to process everything faster (4 workers)             | `immich-exif -y -workers 4 -all`                                |
+| I want eligible files exported to album folders (no upload) | `immich-exif -y -export-dir ./out -all`                         |
+| I want to export one album in its own folder                | `immich-exif -y -export-dir ./export -album <album-id>`         |
+| I want to export all albums                                 | `immich-exif -y -export-dir ./export -album all`                |
+| I want duplicates auto-resolved                             | `immich-exif -y -resolve-duplicate -album <album-id>`           |
+| I want to ignore cache and re-check everything              | `immich-exif -y -force -all`                                    |
+| I want named people written as face regions too             | `immich-exif -y -faces -all`                                    |
+| I want external-library files updated where they are        | `immich-exif -y -in-place-map /mnt/photos=/volume1/photos -all` |
+| I want Immich crops and rotations baked into the files      | `immich-exif -y -apply-edits -all`                              |
 
 When using `-export-dir` with exactly one `-album`, files are exported to `/<export-dir>/<album-id>/`.
 With `-export-dir` and `-all` or `-album all`, exported assets are mirrored per album folder (`/<export-dir>/<album-id>/...`), including shared assets in each album folder. Assets with no album go to `/<export-dir>/no-album/` by default and can be omitted with `-include-no-album=false`.
@@ -146,12 +147,14 @@ On Immich 1.113+ you can scope the API key to exactly what the tool needs (older
 | `stack.update`      | Hand the replacement the stack primary slot the original held                       |
 | `album.read`        | Resolve `-album` / `-album all` selections                                          |
 | `face.read`         | Fetch face boxes — only needed with `-faces`                                        |
+| `asset.file.read`   | List an asset's sidecars — only needed with `-in-place-map` (Immich 3.2+)           |
+| `job.create`        | Ask Immich to re-read a file — only needed with `-in-place-map`                     |
 | `asset.edit.get`    | Read Immich editor edits — only needed for edited assets                            |
 | `asset.edit.create` | Re-apply edits to the replacement — edited assets without `-apply-edits`            |
 | `asset.view`        | Read the unedited preview that verifies an edited render — only with `-apply-edits` |
 | `stack.read`        | List stacks — only needed with `-repair-stacks`                                     |
 
-Read-only modes need less: `-dry-run` and `-export-dir` never write to the server, so they only require `server.about`, `asset.read`, `asset.download`, and `album.read` (drop `album.read` too if you only pass asset IDs; add `face.read` if you combine them with `-faces`, and `asset.edit.get` plus `asset.view` with `-apply-edits`).
+Read-only modes need less: `-dry-run` and `-export-dir` never write to the server, so they only require `server.about`, `asset.read`, `asset.download`, and `album.read` (drop `album.read` too if you only pass asset IDs; add `face.read` if you combine them with `-faces`, and `asset.edit.get` plus `asset.view` with `-apply-edits`). `-in-place-map` runs need `asset.read`, `asset.download`, `asset.update`, `asset.file.read` and `job.create`.
 
 ## Usage
 
@@ -179,6 +182,7 @@ immich-exif [flags] [asset-ids...]
 | `-all`               | `false`           | Select the all-assets mode (timeline, archived and hidden; external-library assets only on read-only runs) |
 | `-force`             | `false`           | Ignore the state cache and re-process (only valid with `-all` / `-album all`)                              |
 | `-faces`             | `false`           | Also write named Immich people as MWG face regions (`XMP-mwg-rs`), readable by digiKam and others          |
+| `-in-place-map`      |                   | Update external-library files in place: `SERVER_PATH=LOCAL_DIR`, repeatable; see below                     |
 | `-apply-edits`       | `false`           | Bake Immich editor edits (crop, rotate, mirror) into the file (env: `APPLY_EDITS=true`); see below         |
 | `-rename`            | `false`           | With `-export-dir`, rename exported files from the corrected capture date (env: `RENAME=true`)             |
 | `-rename-pattern`    | `%Y%m%d-%H%M%S`   | strftime-style pattern for `-rename` (env: `RENAME_PATTERN`)                                               |
@@ -312,6 +316,27 @@ Immich's editor (2.5+) is non-destructive: crops, rotations and mirrors live in 
 - An asset is skipped, never replaced, when it changed less than a minute ago, when Immich has not rendered its edits yet, or when its render does not show the current edits: the render's size and content are checked against Immich's unedited preview, so a render left over from earlier edits (Immich still re-rendering) is never baked. Re-run later. Renders in JPEG XL cannot be checked and are skipped; use JPEG or WebP.
 - With `-faces`, the regions are written for the edited image. Without `-apply-edits`, face regions are skipped for edited assets: Immich reports their boxes on the edited image, not on the original's pixels.
 - Works with `-dry-run` and `-export-dir`. On `-all` runs, edited assets bypass the state cache.
+
+### Updating external libraries in place (`-in-place-map`)
+
+Replacing an asset gives it a new ID. For an **external library**, whose files you own, the tool can instead rewrite the file where it lives and keep the asset as it is. Give it the library path as Immich sees it and where this machine mounts the same files:
+
+```bash
+immich-exif -y -in-place-map /mnt/photos=/volume1/photos -all
+```
+
+- The asset keeps its ID, albums, faces and everything else; nothing is uploaded, duplicated or trashed. Immich identifies external files by path, so its checksum stays valid, and the tool asks it to re-read the file (repeating the request until Immich sees the new version, since network and Docker file shares can serve old attributes for a few seconds).
+- **There is no trash window**: the file is rewritten for good. Run `-dry-run` first and keep backups.
+- Before writing, the local file must be byte-identical to the one Immich serves (a wrong mapping can never rewrite another file), and it is re-checked right before the swap. The new file is written next to the original and renamed over it, so the swap is atomic; the file mode is kept.
+- An asset is skipped, never forced, when the file is a symlink or sits under one, has other hard links, belongs to another user, changed while processing, or when a sidecar disagrees with Immich. Immich writes its own sidecar next to external files you edit in Immich; that one agrees and does not block. A sidecar holding another value would be applied over the file by Immich, so it is reported instead.
+- Only external-library assets under a mapped path are updated in place; everything else follows the usual replace flow. Not available on Windows, and it cannot be combined with `-export-dir` or `-apply-edits` (baking in place would destroy the original pixels).
+- Uploaded (non-external) assets cannot be updated in place: Immich stores a checksum of their content and has no API to replace it, so a rewritten file would break Immich's integrity checks and the mobile app's backup matching.
+
+### Things worth knowing
+
+- **`duplicate key value violates unique constraint "UQ_assets_owner_checksum"` in the database logs** is Immich detecting an upload identical to an existing asset, usually a replacement left by an interrupted run. Immich answers "duplicate"; the tool skips the asset and suggests `-resolve-duplicate`.
+- **Replacing an asset changes its ID.** Albums, favorites, shared links, stacks and the sidecar follow, but bookmarks and external tools referring to the old ID do not. External libraries can avoid this with `-in-place-map`.
+- **Immich applies a sidecar over the file.** If an asset's `.xmp` sidecar holds a value that no longer matches Immich (for example after editing Immich's database directly), that value wins again at the next metadata refresh, whatever the tool embedded. Immich keeps its own sidecars in sync with edits made through Immich.
 
 ### DateTime and timezone handling
 

@@ -47,8 +47,15 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	// (dry-run, export) are safe. A set libraryId always means external on
 	// servers this client can address: the /api/assets routes and nullable
 	// libraryId both arrived in Immich 1.106.
-	if cfg.WillReplace() && asset.LibraryID != "" {
-		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset belongs to an external library; replacing it would migrate it into the internal library (dry-run and export still work)"}
+	inPlace := inPlaceTarget{}
+	if asset.LibraryID != "" && len(cfg.InPlaceMaps) > 0 {
+		var note string
+		if inPlace, note = resolveInPlace(cfg, *asset); note != "" {
+			return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: note}
+		}
+	}
+	if cfg.WillReplace() && asset.LibraryID != "" && inPlace.local == "" {
+		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset belongs to an external library; replacing it would migrate it into the internal library (-in-place-map updates it in place; dry-run and export still work)"}
 	}
 	if model.IsLivePhotoMotionCandidate(*asset) {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "hidden video (likely a live-photo motion part); replacing it would sever the pair"}
@@ -93,6 +100,16 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 		stepProgress("Downloading "+displayName+"...", percent)
 	}); err != nil {
 		return fail("download: %v", err)
+	}
+
+	if inPlace.local != "" {
+		var note string
+		if inPlace, note, err = prepareInPlace(client, cfg, *asset, inPlace, filePath); err != nil {
+			return fail("in-place check: %v", err)
+		}
+		if note != "" {
+			return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: note}
+		}
 	}
 
 	baked := bakedFile{}
@@ -229,6 +246,9 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 		}
 	}
 
+	if inPlace.local != "" {
+		return commitInPlace(client, cfg, asset, filePath, inPlace, emitter)
+	}
 	return uploadReplacement(uploader, filePath, asset, emitter, cancelled)
 }
 
