@@ -12,6 +12,7 @@ type ExifTagMap map[string]any
 var ReadExifTagsFn = ReadExifTags
 var WriteExifTagsFn = WriteExifTags
 var CheckExiftoolFn = CheckExiftool
+var CopyMetadataFn = CopyMetadata
 
 func CheckExiftool() error {
 	_, err := exec.LookPath("exiftool")
@@ -83,4 +84,22 @@ func WriteExifTags(filePath string, args []string) error {
 		return fmt.Errorf("exiftool write: %w: %s", err, string(output))
 	}
 	return nil
+}
+
+func CopyMetadata(src, dst string) error {
+	args := []string{
+		"-TagsFromFile", src, "-all:all",
+		"--ICC_Profile:all",
+		"--Orientation",
+		"--ImageWidth", "--ImageHeight",
+		"--ExifImageWidth", "--ExifImageHeight",
+		"--IFD1:all",
+		"--ThumbnailImage", "--PreviewImage", "--JpgFromRaw", "--OtherImage",
+		"--DefaultCropOrigin", "--DefaultCropSize", "--ActiveArea",
+		"--SubjectArea", "--SubjectLocation", "--XMP-iptcExt:ImageRegion",
+		"--OriginalDefaultFinalSize", "--OriginalBestQualitySize",
+		"--XMP-mwg-rs:all", "--XMP-MP:all", "--XMP-crs:all",
+		"--XMP-GCamera:all", "--XMP-GContainer:all", "--XMP-hdrgm:all",
+	}
+	return WriteExifTags(dst, args)
 }

@@ -36,7 +36,7 @@ func TestListAllAssetIDsWithFacesKeepsPeopleOnlyAssets(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	ids, stats, err := c.ListAllAssetIDs(nil, true, true)
+	ids, stats, err := c.ListAllAssetIDs(nil, true, true, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestListAllAssetIDsWithoutFacesSkipsPeopleOnlyAssets(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	ids, stats, err := c.ListAllAssetIDs(nil, true, false)
+	ids, stats, err := c.ListAllAssetIDs(nil, true, false, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

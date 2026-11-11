@@ -236,6 +236,13 @@ func (e *LogEmitter) EmitAllDone(event model.AllDoneEvent) {
 	}
 	fmt.Printf("\nDone: %s, %d skipped, %s\n", green(fmt.Sprintf("%d succeeded", succeeded)), skipped, failedText)
 
+	if lines := skippedSummaryLines(event.Results); len(lines) > 0 {
+		fmt.Println("\n" + amber("Skipped assets:"))
+		for _, line := range lines {
+			fmt.Println("  " + line)
+		}
+	}
+
 	if failed > 0 {
 		fmt.Println("\n" + red("Failed assets:"))
 		for _, r := range event.Results {

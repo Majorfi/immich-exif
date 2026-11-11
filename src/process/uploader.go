@@ -24,9 +24,15 @@ type ModernUploader struct {
 	Client           *api.ImmichClient
 	ResolveDuplicate bool
 	VerifyUpload     bool
+	ApplyEdits       bool
 }
 
 func (u *ModernUploader) Upload(filePath string, asset *model.AssetResponse, emitter model.EventEmitter) (UploadOutcome, error) {
+	plan, err := u.planReplacement(asset)
+	if err != nil {
+		return UploadOutcome{}, err
+	}
+
 	emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: "Uploading new asset..."})
 	uploadResp, err := u.Client.UploadAsset(filePath, asset)
 	if err != nil {
@@ -64,8 +70,11 @@ func (u *ModernUploader) Upload(filePath string, asset *model.AssetResponse, emi
 			if asset.LivePhotoVideoID != "" && duplicate.LivePhotoVideoID == "" {
 				return UploadOutcome{}, nonRetryable(fmt.Errorf("duplicate asset %s lacks the live-photo link of %s; resolving would sever the pair (old asset NOT deleted)", model.ShortID(newID), model.ShortID(asset.ID)))
 			}
+			if duplicate.IsEdited && len(plan.edits) == 0 {
+				return UploadOutcome{}, nonRetryable(fmt.Errorf("duplicate asset %s carries Immich edits the replacement would not; resolving would change how the photo looks (old asset %s NOT deleted)", model.ShortID(newID), model.ShortID(asset.ID)))
+			}
 			emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Duplicate detected. Resolving by moving associations to %s and deleting old asset...", newID)})
-			if err := u.finalizeReplacement(filePath, asset, newID, emitter); err != nil {
+			if err := u.finalizeReplacement(filePath, asset, newID, plan, emitter); err != nil {
 				return UploadOutcome{}, nonRetryable(err)
 			}
 			return UploadOutcome{
@@ -97,14 +106,14 @@ func (u *ModernUploader) Upload(filePath string, asset *model.AssetResponse, emi
 	}
 
 	emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("New asset ID: %s", newID)})
-	if err := u.finalizeReplacement(filePath, asset, newID, emitter); err != nil {
+	if err := u.finalizeReplacement(filePath, asset, newID, plan, emitter); err != nil {
 		return UploadOutcome{}, nonRetryable(err)
 	}
 
 	return UploadOutcome{NewID: newID, Cacheable: true}, nil
 }
 
-func (u *ModernUploader) finalizeReplacement(filePath string, asset *model.AssetResponse, targetID string, emitter model.EventEmitter) error {
+func (u *ModernUploader) finalizeReplacement(filePath string, asset *model.AssetResponse, targetID string, plan replacementPlan, emitter model.EventEmitter) error {
 	if u.VerifyUpload {
 		emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Verifying uploaded asset %s checksum...", model.ShortID(targetID))})
 		if err := verifyUploadedChecksum(u.Client, filePath, targetID); err != nil {
@@ -112,8 +121,12 @@ func (u *ModernUploader) finalizeReplacement(filePath string, asset *model.Asset
 		}
 	}
 
+	if err := u.carryEdits(asset, targetID, plan, emitter); err != nil {
+		return err
+	}
+
 	emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: fmt.Sprintf("Copying associations from %s to %s...", model.ShortID(asset.ID), model.ShortID(targetID))})
-	if err := u.Client.CopyAsset(asset.ID, targetID); err != nil {
+	if err := u.Client.CopyAsset(asset.ID, targetID, plan.copySidecar); err != nil {
 		return fmt.Errorf("copy associations failed (target asset %s exists but old %s NOT deleted): %w", targetID, asset.ID, err)
 	}
 

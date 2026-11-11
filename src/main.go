@@ -80,8 +80,9 @@ func run() int {
 		return 1
 	}
 
-	if cfg.WillReplace() {
-		warnIfServerTrashDisabled(client)
+	if cfg.WillReplace() && !warnIfServerTrashDisabled(client) && cfg.ApplyEdits {
+		fmt.Fprintln(os.Stderr, "Error: refusing -apply-edits without a confirmed trash: baking replaces each original with a re-encoded render, and the unedited original would be unrecoverable")
+		return 1
 	}
 
 	var stateDB *state.StateDB
@@ -113,7 +114,7 @@ func run() int {
 				if !ok {
 					return false
 				}
-				return stateDB.IsUpToDate(asset.ID, snap)
+				return !cfg.BakesEdits(asset) && stateDB.IsUpToDate(asset.ID, snap)
 			}
 		}
 	}
@@ -131,7 +132,7 @@ func run() int {
 		return 0
 	}
 
-	uploader := &process.ModernUploader{Client: client, ResolveDuplicate: cfg.ResolveDuplicate, VerifyUpload: cfg.VerifyUpload}
+	uploader := &process.ModernUploader{Client: client, ResolveDuplicate: cfg.ResolveDuplicate, VerifyUpload: cfg.VerifyUpload, ApplyEdits: cfg.ApplyEdits}
 
 	if cfg.ExportDir != "" {
 		cfg.ExportDir = resolveExportDir(cfg)
@@ -238,7 +239,7 @@ func resolveAssetIDs(client *api.ImmichClient, cfg *model.Config, shouldSkip fun
 	stats := api.AssetSelectionStats{}
 
 	if cfg.All {
-		ids, allStats, err := client.ListAllAssetIDs(shouldSkip, cfg.WillReplace(), cfg.Faces)
+		ids, allStats, err := client.ListAllAssetIDs(shouldSkip, cfg.WillReplace(), cfg.Faces, cfg.ApplyEdits)
 		if err != nil {
 			return nil, api.AssetSelectionStats{}, fmt.Errorf("list all assets: %w", err)
 		}

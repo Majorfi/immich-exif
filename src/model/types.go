@@ -15,12 +15,18 @@ type AssetResponse struct {
 	IsFavorite       bool             `json:"isFavorite"`
 	IsArchived       bool             `json:"isArchived"`
 	IsTrashed        bool             `json:"isTrashed"`
+	IsEdited         bool             `json:"isEdited"`
 	Visibility       string           `json:"visibility"`
 	LivePhotoVideoID string           `json:"livePhotoVideoId"`
 	LibraryID        string           `json:"libraryId"`
 	ExifInfo         *ExifInfo        `json:"exifInfo"`
 	People           []PersonResponse `json:"people"`
 	Stack            *AssetStack      `json:"stack"`
+	Tags             []TagResponse    `json:"tags"`
+}
+
+type TagResponse struct {
+	Value string `json:"value"`
 }
 
 type AssetStack struct {
@@ -111,6 +117,10 @@ type UploadResponse struct {
 	Status string `json:"status"`
 }
 
+func (c *Config) BakesEdits(asset AssetResponse) bool {
+	return c.ApplyEdits && asset.IsEdited
+}
+
 // WillReplace reports whether this run mutates server assets; dry-run and
 // export are read-only.
 func (c *Config) WillReplace() bool {
@@ -159,6 +169,7 @@ type Config struct {
 	Yes          bool
 	VerifyUpload bool
 	Faces        bool
+	ApplyEdits   bool
 
 	Rename        bool
 	RenamePattern string

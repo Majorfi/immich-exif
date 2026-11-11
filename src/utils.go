@@ -101,15 +101,17 @@ func printSelectionStats(stats api.AssetSelectionStats) {
 // warnIfServerTrashDisabled surfaces that the replace path's recovery window
 // does not exist: with the trash feature off, Immich purges soft-deleted
 // assets immediately, so a trashed original cannot be restored. Best-effort —
-// a least-privilege key may not be allowed to read the features endpoint.
-func warnIfServerTrashDisabled(client *api.ImmichClient) {
+// a least-privilege key may not be allowed to read the features endpoint. It
+// reports whether the trash was confirmed enabled.
+func warnIfServerTrashDisabled(client *api.ImmichClient) bool {
 	features, err := client.Features()
 	if err != nil {
-		return
+		return false
 	}
 	if !features.Trash {
 		fmt.Fprintln(os.Stderr, "Warning: this server has the trash feature DISABLED; replaced originals are deleted immediately with no recovery window")
 	}
+	return features.Trash
 }
 
 func shouldUseStateCache(cfg *model.Config) bool {
@@ -260,7 +262,7 @@ func maybeResolveDuplicatesNow(ctx context.Context, client *api.ImmichClient, cf
 
 	fmt.Printf("\nRe-running unresolved duplicates with -resolve-duplicate (%d assets)\n", len(assetIDs))
 	resolveCfg := buildResolveDuplicateFollowUpConfig(cfg)
-	resolveUploader := &process.ModernUploader{Client: client, ResolveDuplicate: true, VerifyUpload: cfg.VerifyUpload}
+	resolveUploader := &process.ModernUploader{Client: client, ResolveDuplicate: true, VerifyUpload: cfg.VerifyUpload, ApplyEdits: cfg.ApplyEdits}
 	return runPipeline(ctx, client, resolveUploader, resolveCfg, assetIDs)
 }
 

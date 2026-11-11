@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -52,58 +51,21 @@ func (w *downloadProgressWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func (c *ImmichClient) DownloadAsset(assetID, destPath, expectedChecksum string, onProgress func(percent int)) (err error) {
-	req, err := c.newRequest(http.MethodGet, "/assets/"+url.PathEscape(assetID)+"/original", nil)
+func (c *ImmichClient) DownloadAsset(assetID, destPath, expectedChecksum string, onProgress func(percent int)) error {
+	path := "/assets/" + url.PathEscape(assetID) + "/original"
+	sum, err := c.download(assetID, path, func(*http.Response) (string, error) { return destPath, nil }, onProgress)
 	if err != nil {
 		return err
-	}
-	ctx, cancel := context.WithCancel(req.Context())
-	defer cancel()
-	watchdog := newProgressWatchdog(cancel)
-	defer watchdog.Stop()
-	resp, err := c.doRequest(req.WithContext(ctx))
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	f, err := os.Create(destPath)
-	if err != nil {
-		return fmt.Errorf("create file: %w", err)
-	}
-	defer func() {
-		closeErr := f.Close()
-		if closeErr != nil && err == nil {
-			err = fmt.Errorf("close file: %w", closeErr)
-		}
-		if err != nil {
-			_ = os.Remove(destPath)
-		}
-	}()
-
-	hasher := sha1.New()
-	dest := io.MultiWriter(f, hasher)
-	if onProgress != nil && resp.ContentLength > 0 {
-		dest = io.MultiWriter(f, hasher, &downloadProgressWriter{total: resp.ContentLength, onProgress: onProgress})
-	}
-	written, err := io.Copy(dest, watchdogReader{reader: resp.Body, watchdog: watchdog})
-	if err != nil {
-		if ctx.Err() != nil {
-			return fmt.Errorf("download stalled: no progress for %v", stallTimeout)
-		}
-		return fmt.Errorf("write file: %w", err)
-	}
-
-	if resp.ContentLength >= 0 && written != resp.ContentLength {
-		return fmt.Errorf("download truncated for asset %s: wrote %d bytes, expected %d", model.ShortID(assetID), written, resp.ContentLength)
 	}
 
 	if expectedChecksum != "" {
 		want, decodeErr := model.DecodeSHA1Checksum(expectedChecksum)
 		if decodeErr != nil {
+			_ = os.Remove(destPath)
 			return fmt.Errorf("decode source checksum %q: %w", expectedChecksum, decodeErr)
 		}
-		if !bytes.Equal(hasher.Sum(nil), want) {
+		if !bytes.Equal(sum, want) {
+			_ = os.Remove(destPath)
 			return fmt.Errorf("download checksum mismatch for asset %s (file is corrupt or truncated)", model.ShortID(assetID))
 		}
 	}
@@ -209,14 +171,14 @@ func (c *ImmichClient) UploadAsset(filePath string, asset *model.AssetResponse) 
 	return &resp, nil
 }
 
-func (c *ImmichClient) CopyAsset(sourceID, destinationID string) error {
+func (c *ImmichClient) CopyAsset(sourceID, destinationID string, sidecar bool) error {
 	body := model.CopyAssetsRequest{
 		SourceID:    sourceID,
 		TargetID:    destinationID,
 		Albums:      true,
 		Favorite:    true,
 		SharedLinks: true,
-		Sidecar:     true,
+		Sidecar:     sidecar,
 		Stack:       true,
 	}
 	jsonBody, err := json.Marshal(body)

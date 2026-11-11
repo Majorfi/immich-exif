@@ -32,8 +32,9 @@ The destructive path is the careful path. By default the tool will not delete an
 - **Live photos stay paired** — the still's `livePhotoVideoId` is forwarded on re-upload, and hidden videos (live-photo motion parts) are skipped rather than replaced, which would sever the pair.
 - **Mid-run edits are respected** — the asset is re-checked right before upload; if its metadata changed on the server while the tool was working, it is skipped instead of overwritten.
 - **External libraries are protected** — replacing an external-library asset would migrate a copy into Immich's internal library (and duplicate it at the next scan), so those assets are skipped on replace runs. `-dry-run` and `-export-dir` still cover them.
+- **Immich edits survive** — Immich's editor keeps crops, rotations and mirrors apart from the file, and does not copy them to a new asset. The replacement gets the original's edits re-applied before the original is trashed; if that fails, the original stays. `-apply-edits` bakes them into the file instead (see [below](#baking-immich-edits--apply-edits)).
 - **Face regions are opt-in** — `-faces` replaces the file's `XMP-mwg-rs` region structure with Immich's named people; without the flag, region metadata is never touched.
-- **Trash disabled on the server?** The tool warns you loudly: without the trash feature there is no recovery window.
+- **Trash disabled on the server?** The tool warns you loudly: without the trash feature there is no recovery window. `-apply-edits` refuses to run unless the server confirms its trash is enabled, since the unedited original would be lost for good.
 - **`-dry-run`** writes nothing and shows every change first.
 - The API key is refused over plaintext `http://` unless you pass `-allow-http`.
 
@@ -53,6 +54,7 @@ An interruption (Ctrl-C) or a failed step leaves a duplicate, never a hole: the 
 | I want duplicates auto-resolved                             | `immich-exif -y -resolve-duplicate -album <album-id>`   |
 | I want to ignore cache and re-check everything              | `immich-exif -y -force -all`                            |
 | I want named people written as face regions too             | `immich-exif -y -faces -all`                            |
+| I want Immich crops and rotations baked into the files      | `immich-exif -y -apply-edits -all`                      |
 
 When using `-export-dir` with exactly one `-album`, files are exported to `/<export-dir>/<album-id>/`.
 With `-export-dir` and `-all` or `-album all`, exported assets are mirrored per album folder (`/<export-dir>/<album-id>/...`), including shared assets in each album folder. Assets with no album go to `/<export-dir>/no-album/` by default and can be omitted with `-include-no-album=false`.
@@ -132,21 +134,24 @@ RENAME_PATTERN=%Y%m%d-%H%M%S
 
 On Immich 1.113+ you can scope the API key to exactly what the tool needs (older servers issue all-or-nothing keys). A normal run that re-uploads and replaces assets uses:
 
-| Permission       | Why                                                             |
-| ---------------- | --------------------------------------------------------------- |
-| `server.about`   | Server-version detection (optional with a forced `-immich-api`) |
-| `asset.read`     | Read asset metadata and page the library and albums             |
-| `asset.download` | Download the original file                                      |
-| `asset.upload`   | Re-upload the metadata-corrected file                           |
-| `asset.copy`     | Copy associations (albums, favorites, …) to the new asset       |
-| `asset.update`   | Restore visibility for archived or hidden assets                |
-| `asset.delete`   | Trash the old original after a verified replacement             |
-| `stack.update`   | Hand the replacement the stack primary slot the original held   |
-| `album.read`     | Resolve `-album` / `-album all` selections                      |
-| `face.read`      | Fetch face boxes — only needed with `-faces`                    |
-| `stack.read`     | List stacks — only needed with `-repair-stacks`                 |
+| Permission          | Why                                                                                 |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| `server.about`      | Server-version detection (optional with a forced `-immich-api`)                     |
+| `asset.read`        | Read asset metadata and page the library and albums                                 |
+| `asset.download`    | Download the original file                                                          |
+| `asset.upload`      | Re-upload the metadata-corrected file                                               |
+| `asset.copy`        | Copy associations (albums, favorites, …) to the new asset                           |
+| `asset.update`      | Restore visibility for archived or hidden assets                                    |
+| `asset.delete`      | Trash the old original after a verified replacement                                 |
+| `stack.update`      | Hand the replacement the stack primary slot the original held                       |
+| `album.read`        | Resolve `-album` / `-album all` selections                                          |
+| `face.read`         | Fetch face boxes — only needed with `-faces`                                        |
+| `asset.edit.get`    | Read Immich editor edits — only needed for edited assets                            |
+| `asset.edit.create` | Re-apply edits to the replacement — edited assets without `-apply-edits`            |
+| `asset.view`        | Read the unedited preview that verifies an edited render — only with `-apply-edits` |
+| `stack.read`        | List stacks — only needed with `-repair-stacks`                                     |
 
-Read-only modes need less: `-dry-run` and `-export-dir` never write to the server, so they only require `server.about`, `asset.read`, `asset.download`, and `album.read` (drop `album.read` too if you only pass asset IDs; add `face.read` if you combine them with `-faces`).
+Read-only modes need less: `-dry-run` and `-export-dir` never write to the server, so they only require `server.about`, `asset.read`, `asset.download`, and `album.read` (drop `album.read` too if you only pass asset IDs; add `face.read` if you combine them with `-faces`, and `asset.edit.get` plus `asset.view` with `-apply-edits`).
 
 ## Usage
 
@@ -174,6 +179,7 @@ immich-exif [flags] [asset-ids...]
 | `-all`               | `false`           | Select the all-assets mode (timeline, archived and hidden; external-library assets only on read-only runs) |
 | `-force`             | `false`           | Ignore the state cache and re-process (only valid with `-all` / `-album all`)                              |
 | `-faces`             | `false`           | Also write named Immich people as MWG face regions (`XMP-mwg-rs`), readable by digiKam and others          |
+| `-apply-edits`       | `false`           | Bake Immich editor edits (crop, rotate, mirror) into the file (env: `APPLY_EDITS=true`); see below         |
 | `-rename`            | `false`           | With `-export-dir`, rename exported files from the corrected capture date (env: `RENAME=true`)             |
 | `-rename-pattern`    | `%Y%m%d-%H%M%S`   | strftime-style pattern for `-rename` (env: `RENAME_PATTERN`)                                               |
 | `-album`             |                   | Album ID to process (repeatable), or `all` as an alias of `-all`                                           |
@@ -254,7 +260,15 @@ Each asset with changes then shows a diff and waits for input (the counter line 
 ```
 
 No Enter key needed. Use `-y` to auto-confirm. When output is piped or redirected, the counter prints one line per step instead of updating in place, and percent-only updates are omitted.
-Interactive mode forces single-worker to avoid mixed prompts; parallel workers apply when using `-y`. Under `-y` on a terminal, the live counter still shows between diff blocks — one line per file in flight when running several workers; the per-step upload logs stay omitted. When `-y` output is piped or redirected, each asset prints only its diff block, and each block prints atomically, so multiple workers never interleave their output. Final outcomes and any failures are reported in the closing summary.
+Interactive mode forces single-worker to avoid mixed prompts; parallel workers apply when using `-y`. Under `-y` on a terminal, the live counter still shows between diff blocks — one line per file in flight when running several workers; the per-step upload logs stay omitted. When `-y` output is piped or redirected, each asset prints only its diff block, and each block prints atomically, so multiple workers never interleave their output. Final outcomes and any failures are reported in the closing summary, which also groups skipped assets by reason, most frequent first, with up to five IDs each (duplicates have their own summary):
+
+```
+Done: 12 succeeded, 4 skipped, 0 failed
+
+Skipped assets:
+  3 × metadata already matches (4c1f2a9e, 9ab2d771, e04f1c3b)
+  1 × asset changed less than a minute ago; Immich may still be rendering its edits, re-run shortly (7d3e8b20)
+```
 
 Output is colorized when stdout is a terminal (added tags in green, changed tags in amber, failures in red). Colors are disabled automatically when the output is piped or redirected, and when `NO_COLOR` is set.
 
@@ -264,15 +278,16 @@ Output is colorized when stdout is a terminal (added tags in green, changed tags
 
 Images use the full tag set below. Supported video containers (`mp4`, `mov`, `m4v`) use a compatible subset: description, rating, GPS, XMP location, dates, and camera fields.
 
-| Category    | Tags                                                                                                                                         | Notes                                                                                                    |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| GPS         | `GPSLatitude`, `GPSLatitudeRef`, `GPSLongitude`, `GPSLongitudeRef`, `XMP-exif:GPSLatitude`, `XMP-exif:GPSLongitude`                          | Ref derived from coordinate sign; XMP uses signed                                                        |
-| Description | `ImageDescription`, `XPComment`, `XMP-dc:Description`, `IPTC:Caption-Abstract`                                                               | EXIF + Windows + XMP Dublin Core + IPTC                                                                  |
-| Rating      | `Rating`, `RatingPercent`, `XMP-xmp:Rating`                                                                                                  | Percent = rating x 20; an explicit rating of 0 clears stale rating tags (null = never rated = untouched) |
-| Location    | `IPTC:City`, `XMP-photoshop:City`, `IPTC:Province-State`, `XMP-photoshop:State`, `IPTC:Country-PrimaryLocationName`, `XMP-photoshop:Country` | Dual IPTC + XMP-photoshop                                                                                |
-| DateTime    | `DateTimeOriginal`, `OffsetTimeOriginal`, `TimeZoneOffset`, `XMP-exif:DateTimeOriginal`, `XMP-xmp:CreateDate`                                | See below; XMP uses ISO 8601                                                                             |
-| Camera      | `Make`, `Model`, `LensModel`                                                                                                                 | Only written if file has no existing value                                                               |
-| Faces       | `XMP-mwg-rs:RegionInfo` (MWG face regions)                                                                                                   | Opt-in via `-faces`; images and supported videos, named people only; see below                           |
+| Category    | Tags                                                                                                                                         | Notes                                                                                                      |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| GPS         | `GPSLatitude`, `GPSLatitudeRef`, `GPSLongitude`, `GPSLongitudeRef`, `XMP-exif:GPSLatitude`, `XMP-exif:GPSLongitude`                          | Ref derived from coordinate sign; XMP uses signed                                                          |
+| Description | `ImageDescription`, `XPComment`, `XMP-dc:Description`, `IPTC:Caption-Abstract`                                                               | EXIF + Windows + XMP Dublin Core + IPTC                                                                    |
+| Rating      | `Rating`, `RatingPercent`, `XMP-xmp:Rating`                                                                                                  | Percent = rating x 20; an explicit rating of 0 clears stale rating tags (null = never rated = untouched)   |
+| Location    | `IPTC:City`, `XMP-photoshop:City`, `IPTC:Province-State`, `XMP-photoshop:State`, `IPTC:Country-PrimaryLocationName`, `XMP-photoshop:Country` | Dual IPTC + XMP-photoshop                                                                                  |
+| DateTime    | `DateTimeOriginal`, `OffsetTimeOriginal`, `TimeZoneOffset`, `XMP-exif:DateTimeOriginal`, `XMP-xmp:CreateDate`                                | See below; XMP uses ISO 8601                                                                               |
+| Camera      | `Make`, `Model`, `LensModel`                                                                                                                 | Only written if file has no existing value                                                                 |
+| Faces       | `XMP-mwg-rs:RegionInfo` (MWG face regions)                                                                                                   | Opt-in via `-faces`; images and supported videos, named people only; see below                             |
+| Tags        | `XMP-digiKam:TagsList`                                                                                                                       | Only on files baked by `-apply-edits`, which do not inherit the sidecar that otherwise carries Immich tags |
 
 ### Face regions (`-faces`)
 
@@ -285,6 +300,18 @@ With `-faces`, every person you have **named** in Immich is written into the fil
 - **Supported videos** (`mp4`, `mov`, `m4v`) embed the same MWG regions as images — exiftool writes XMP into the container, and Immich re-imports them when _"Import faces from metadata"_ is enabled, exactly as for photos. Regions are anchored through the video's display `Rotation` (0°, 90°, 270°); a 180° or non-cardinal rotation is left un-embedded rather than risk a misplaced box, and other containers are skipped.
 - The key needs the `face.read` permission (see [API key permissions](#api-key-permissions)).
 - Incremental-cache caveats: the `-all` state cache keys on the set of _names_, so correcting a face's box or reassigning a face between two already-named people does not invalidate it — use `-force` to re-check. Toggling `-faces` on or off changes the cache key, so the first run after a toggle re-checks the library once.
+
+### Baking Immich edits (`-apply-edits`)
+
+Immich's editor (2.5+) is non-destructive: crops, rotations and mirrors live in Immich's database, so other apps see the unedited file. With `-apply-edits`, every edited photo is replaced by the edited version:
+
+- The tool downloads Immich's own render of the edits, copies the original's metadata onto it (camera, lens, dates, GPS, keywords…), then writes Immich's metadata as usual. Tags that describe the original's pixels are left behind: orientation, dimensions, embedded previews, colour profile, face regions and crop settings.
+- **The render is re-encoded by your server**, with the format and quality set in Immich's _Administration › Settings › Image Settings › Full-size image_ (JPEG, quality 80 by default). Raise the quality there before baking. The extension follows the render (a `.heic` or RAW original becomes `.jpeg`).
+- The replacement does not inherit the original's XMP sidecar: Immich applies a sidecar over the file, and the orientation, dimensions or face regions in it describe the photo before the edits. What Immich itself keeps in the sidecar (description, date, GPS, rating) is embedded anyway, and Immich's tags are written to `XMP-digiKam:TagsList`. Other sidecar-only XMP (for example a Lightroom copyright) stays with the trashed original: Immich's API cannot read a sidecar, so it cannot be cleaned and kept.
+- The unedited original goes to the trash like any replaced asset, and the replacement carries no edits. Re-editing it in Immich starts from the baked pixels.
+- An asset is skipped, never replaced, when it changed less than a minute ago, when Immich has not rendered its edits yet, or when its render does not show the current edits: the render's size and content are checked against Immich's unedited preview, so a render left over from earlier edits (Immich still re-rendering) is never baked. Re-run later. Renders in JPEG XL cannot be checked and are skipped; use JPEG or WebP.
+- With `-faces`, the regions are written for the edited image. Without `-apply-edits`, face regions are skipped for edited assets: Immich reports their boxes on the edited image, not on the original's pixels.
+- Works with `-dry-run` and `-export-dir`. On `-all` runs, edited assets bypass the state cache.
 
 ### DateTime and timezone handling
 

@@ -57,6 +57,7 @@ func parseConfig() (*model.Config, error) {
 	flag.BoolVar(&cfg.IncludeNoAlbum, "include-no-album", true, "With album-mirrored export, include assets with no album under no-album/")
 	flag.BoolVar(&cfg.All, "all", false, "Process all assets")
 	flag.BoolVar(&cfg.Faces, "faces", false, "Also write named Immich people as MWG face regions (XMP-mwg-rs)")
+	flag.BoolVar(&cfg.ApplyEdits, "apply-edits", os.Getenv("APPLY_EDITS") == "true", "Bake Immich editor edits (crop, rotate, mirror) into the file; the edited render is re-encoded by the server (env: APPLY_EDITS=true)")
 	flag.BoolVar(&cfg.Rename, "rename", os.Getenv("RENAME") == "true", "With -export-dir, rename exported files from the corrected capture date (env: RENAME=true)")
 	flag.StringVar(&cfg.RenamePattern, "rename-pattern", renamePatternDefault(), "strftime-style pattern for -rename: %Y %y %m %d %H %M %S (env: RENAME_PATTERN)")
 	flag.BoolVar(&cfg.Force, "force", false, "Force re-processing all assets (ignore state cache)")
