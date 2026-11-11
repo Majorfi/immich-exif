@@ -77,7 +77,10 @@ func bakeEdits(client *api.ImmichClient, asset model.AssetResponse, plan bakePla
 	if err != nil {
 		return bakedFile{}, fmt.Errorf("create render dir: %w", err)
 	}
-	originalSum, err := fileChecksumSHA1(originalPath)
+	originalSum, err := model.DecodeSHA1Checksum(asset.Checksum)
+	if err != nil || model.IsPathChecksum(asset) {
+		originalSum, err = fileChecksumSHA1(originalPath)
+	}
 	if err != nil {
 		return bakedFile{}, fmt.Errorf("hash original: %w", err)
 	}

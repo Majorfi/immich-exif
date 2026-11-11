@@ -220,8 +220,8 @@ func hasAllAlbumSelector(albumIDs []string) bool {
 }
 
 func parseInPlaceMap(raw string) (model.PathMapping, error) {
-	if runtime.GOOS == "windows" {
-		return model.PathMapping{}, fmt.Errorf("--in-place-map is not supported on Windows")
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		return model.PathMapping{}, fmt.Errorf("--in-place-map is only supported on Linux and macOS")
 	}
 	server, local, ok := strings.Cut(raw, "=")
 	if !ok || server == "" || local == "" {

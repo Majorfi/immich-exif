@@ -13,9 +13,9 @@ import (
 	"github.com/majorfi/immich-exif/model"
 )
 
-var refreshWaitAttempts = 30
+var refreshWaitAttempts = 15
 
-const refreshRepeatEvery = 10
+const refreshRepeatEvery = 8
 
 type inPlaceTarget struct {
 	root  string
@@ -130,14 +130,20 @@ func commitInPlace(client *api.ImmichClient, cfg *model.Config, asset *model.Ass
 	}
 
 	emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: "Updating " + target.local + " in place..."})
-	if err := replaceFile(target.local, rewritten, target.info); errors.Is(err, errNotDurable) {
-		return result(model.StatusFailed, fmt.Sprintf("file updated in place, but %v", err))
+	durability := ""
+	if err := replaceFile(target.local, rewritten, target.info); errors.Is(err, errAttributes) {
+		return result(model.StatusSkipped, err.Error())
+	} else if errors.Is(err, errNotDurable) {
+		durability = err.Error()
 	} else if err != nil {
 		return result(model.StatusFailed, fmt.Sprintf("write in place: %v (the library file was not changed)", err))
 	}
 	reread, err := waitForRefresh(client, *asset, cancelled)
 	if err != nil {
 		return result(model.StatusFailed, fmt.Sprintf("file updated in place, but %v", err))
+	}
+	if durability != "" {
+		return result(model.StatusFailed, "file updated in place, but "+durability)
 	}
 	if !reread {
 		return result(model.StatusSuccess, "updated in place; Immich re-reads it at its next library scan")

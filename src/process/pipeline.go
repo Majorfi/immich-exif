@@ -42,6 +42,18 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	if asset.IsTrashed {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset is in the Immich trash; restore it before processing"}
 	}
+	if model.IsLivePhotoMotionCandidate(*asset) {
+		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "hidden video (likely a live-photo motion part); replacing it would sever the pair"}
+	}
+	if model.IsUnsupportedVideoAsset(*asset) {
+		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "unsupported video container for metadata embedding"}
+	}
+	if len(exif.CollectExifArgs(exif.CompareAssetMetadata(*asset, nil))) == 0 && !wantsFaceRegions(cfg, *asset) && !cfg.BakesEdits(*asset) {
+		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "no metadata to embed"}
+	}
+	if strings.TrimSpace(asset.Checksum) == "" {
+		return fail("server returned no checksum for this asset; refusing to replace without integrity verification")
+	}
 	// Replacing an external-library asset would migrate a copy into the
 	// internal library and duplicate it at the next scan; read-only modes
 	// (dry-run, export) are safe. A set libraryId always means external on
@@ -56,18 +68,6 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	}
 	if cfg.WillReplace() && asset.LibraryID != "" && inPlace.local == "" {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset belongs to an external library; replacing it would migrate it into the internal library (-in-place-map updates it in place; dry-run and export still work)"}
-	}
-	if model.IsLivePhotoMotionCandidate(*asset) {
-		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "hidden video (likely a live-photo motion part); replacing it would sever the pair"}
-	}
-	if model.IsUnsupportedVideoAsset(*asset) {
-		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "unsupported video container for metadata embedding"}
-	}
-	if len(exif.CollectExifArgs(exif.CompareAssetMetadata(*asset, nil))) == 0 && !wantsFaceRegions(cfg, *asset) && !cfg.BakesEdits(*asset) {
-		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "no metadata to embed"}
-	}
-	if strings.TrimSpace(asset.Checksum) == "" {
-		return fail("server returned no checksum for this asset; refusing to replace without integrity verification")
 	}
 
 	plan := bakePlan{}

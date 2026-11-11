@@ -154,7 +154,7 @@ On Immich 1.113+ you can scope the API key to exactly what the tool needs (older
 | `asset.view`        | Read the unedited preview that verifies an edited render — only with `-apply-edits` |
 | `stack.read`        | List stacks — only needed with `-repair-stacks`                                     |
 
-Read-only modes need less: `-dry-run` and `-export-dir` never write to the server, so they only require `server.about`, `asset.read`, `asset.download`, and `album.read` (drop `album.read` too if you only pass asset IDs; add `face.read` if you combine them with `-faces`, and `asset.edit.get` plus `asset.view` with `-apply-edits`). `-in-place-map` runs need `asset.read`, `asset.download`, `asset.update`, `asset.file.read` and `job.create`.
+Read-only modes need less: `-dry-run` and `-export-dir` never write to the server, so they only require `server.about`, `asset.read`, `asset.download`, and `album.read` (drop `album.read` too if you only pass asset IDs; add `face.read` if you combine them with `-faces`, and `asset.edit.get` plus `asset.view` with `-apply-edits`). `-in-place-map` runs need `asset.read`, `asset.download`, `asset.update`, `asset.file.read` and `job.create` (a `-dry-run` with it still reads the sidecars, so it needs `asset.file.read`). In-place updates run on Linux and macOS.
 
 ## Usage
 
@@ -329,7 +329,7 @@ immich-exif -y -in-place-map /mnt/photos=/volume1/photos -all
 - **There is no trash window**: the file is rewritten for good. Run `-dry-run` first and keep backups.
 - Before writing, the local file must be byte-identical to the one Immich serves (a wrong mapping can never rewrite another file), and it is re-checked right before the swap. The new file is written next to the original and renamed over it, so the swap is atomic; its group, mode and extended attributes (which hold POSIX ACLs on Linux) are kept, and an asset whose attributes cannot be reproduced is skipped. A change made by another program in the instant between that last check and the swap would be overwritten, so do not run it while something else edits the same files.
 - An asset is skipped, never forced, when the file is a symlink or sits under one, has other hard links, belongs to another user, carries a macOS access control list, changed while processing, or when a sidecar disagrees with Immich. Immich writes its own sidecar next to external files you edit in Immich; that one agrees and does not block. A sidecar holding another value would be applied over the file by Immich, so it is reported instead.
-- Only external-library assets under a mapped path are updated in place; everything else follows the usual replace flow. Not available on Windows, and it cannot be combined with `-export-dir` or `-apply-edits` (baking in place would destroy the original pixels).
+- Only external-library assets under a mapped path are updated in place; everything else follows the usual replace flow. Available on Linux and macOS, and it cannot be combined with `-export-dir` or `-apply-edits` (baking in place would destroy the original pixels).
 - Uploaded (non-external) assets cannot be updated in place: Immich stores a checksum of their content and has no API to replace it, so a rewritten file would break Immich's integrity checks and the mobile app's backup matching.
 
 ### Things worth knowing

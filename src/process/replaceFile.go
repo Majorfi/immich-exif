@@ -11,6 +11,8 @@ import (
 
 var errNotDurable = errors.New("the rename may not survive a power loss")
 
+var errAttributes = errors.New("cannot carry the file's attributes over")
+
 func replaceFile(destination, source string, original os.FileInfo) error {
 	dir := filepath.Dir(destination)
 	staged, err := os.CreateTemp(dir, ".immich-exif-*")
@@ -31,7 +33,9 @@ func replaceFile(destination, source string, original os.FileInfo) error {
 	_, err = io.Copy(staged, input)
 	input.Close()
 	if err == nil {
-		err = preserveAttributes(destination, original, staged)
+		if attributesErr := preserveAttributes(destination, original, staged); attributesErr != nil {
+			err = fmt.Errorf("%w: %v", errAttributes, attributesErr)
+		}
 	}
 	if err == nil {
 		modified := time.Now()
