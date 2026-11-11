@@ -23,7 +23,8 @@ func fileOwnership(info os.FileInfo) (uint64, int, bool) {
 // preserveAttributes gives the staged file what the rename would otherwise
 // drop: the original's group, permission and special bits, and extended
 // attributes, which also carry POSIX ACLs on Linux, minus any ACL the new
-// file inherited from its directory. security.* labels are left to the system.
+// file inherited from its directory. security.* labels cannot be set without
+// privileges, so they must already match.
 // Anything it cannot reproduce fails the commit before the original is touched.
 func preserveAttributes(original string, info os.FileInfo, staged *os.File) error {
 	stat, ok := info.Sys().(*syscall.Stat_t)
@@ -45,6 +46,9 @@ func preserveAttributes(original string, info os.FileInfo, staged *os.File) erro
 	}
 	for _, name := range names {
 		if strings.HasPrefix(name, "security.") {
+			if !sameXattr(original, staged.Name(), name) {
+				return fmt.Errorf("the new file would get a different %s label, which only the system can set", name)
+			}
 			continue
 		}
 		if err := copyXattr(original, staged.Name(), name); err != nil {
@@ -85,4 +89,19 @@ func copyXattr(source, destination, name string) error {
 		return err
 	}
 	return unix.Setxattr(destination, name, value[:size], 0)
+}
+
+func sameXattr(first, second, name string) bool {
+	read := func(path string) ([]byte, bool) {
+		size, err := unix.Getxattr(path, name, nil)
+		if err != nil {
+			return nil, false
+		}
+		value := make([]byte, size)
+		size, err = unix.Getxattr(path, name, value)
+		return value[:size], err == nil
+	}
+	a, okA := read(first)
+	b, okB := read(second)
+	return okA && okB && bytes.Equal(a, b)
 }
