@@ -281,3 +281,12 @@ func TestSidecarDisagreementFollowsImmichDatePrecedence(t *testing.T) {
 		}
 	}
 }
+
+func TestSidecarDisagreementJudgesDatesByInstant(t *testing.T) {
+	date, zone := "2021-05-06T09:08:09+00:00", "Pacific/Rarotonga"
+	asset := model.AssetResponse{ExifInfo: &model.ExifInfo{DateTimeOriginal: &date, TimeZone: &zone}}
+	tags := exif.ExifTagMap{"DateTimeOriginal": "2021:05:06 19:08:09.000+10:00", "XMP-exif:DateTimeOriginal": "2021:05:06 19:08:09.000+10:00"}
+	if note := sidecarDisagreement(&model.Config{}, asset, tags); note != "" {
+		t.Fatalf("a sidecar date at the same instant in another offset leaves Immich's date unchanged and must pass, got %q", note)
+	}
+}

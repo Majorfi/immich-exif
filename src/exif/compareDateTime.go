@@ -2,11 +2,16 @@ package exif
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/majorfi/immich-exif/model"
 )
 
+// CompareDateTime anchors Immich's UTC date on the asset's zone. Without a
+// zone, a file date lacking an offset is the only clue to it, so the offset is
+// inferred from its wall clock. With one, Immich's zone wins: a wall clock or
+// offset left behind by a date edited in Immich is rewritten, not reinterpreted.
 func CompareDateTime(exif *model.ExifInfo, existing ExifTagMap) *TagChange {
 	if exif.DateTimeOriginal == nil || *exif.DateTimeOriginal == "" {
 		return nil
@@ -30,7 +35,8 @@ func CompareDateTime(exif *model.ExifInfo, existing ExifTagMap) *TagChange {
 	// Immich serializes dateTimeOriginal as UTC ISO; re-anchor it to the asset's
 	// own time zone (exifInfo.timeZone) so the wall-clock time written into the
 	// file matches what the user sees, instead of collapsing to UTC.
-	if loc := resolveImmichLocation(exif.TimeZone); loc != nil {
+	loc := resolveImmichLocation(exif.TimeZone)
+	if loc != nil {
 		immichTime = immichTime.In(loc)
 		expected = immichTime.Format("2006-01-02T15:04:05.000-07:00")
 	}
@@ -38,11 +44,12 @@ func CompareDateTime(exif *model.ExifInfo, existing ExifTagMap) *TagChange {
 	existingHasDate := existing != nil && existing["DateTimeOriginal"] != nil
 	existingHasOffset := existing != nil && (existing["OffsetTimeOriginal"] != nil || existing["TimeZoneOffset"] != nil)
 
+	existingDate, _ := existing["DateTimeOriginal"].(string)
 	var tc *TagChange
-	if existingHasDate && !existingHasOffset {
+	if existingHasDate && !existingHasOffset && (loc == nil || sameWallClock(existingDate, immichTime)) {
 		tc = compareDateTimeMissingOffset(existing, immichTime, expected)
 	} else {
-		tc = compareDateTimeFull(existing, immichTime, expected)
+		tc = compareDateTimeFull(existing, immichTime, expected, loc != nil)
 	}
 
 	if tc == nil {
@@ -69,7 +76,7 @@ func appendXMPDateArgs(tc *TagChange, isoDate string, existing ExifTagMap) {
 func compareDateTimeMissingOffset(existing ExifTagMap, immichTime time.Time, expected string) *TagChange {
 	offsetStr, tzHours, hasWholeHour, canInfer := DeriveOffsetValuesForMissingOffset(existing, expected)
 	if !canInfer {
-		return compareDateTimeFull(existing, immichTime, expected)
+		return compareDateTimeFull(existing, immichTime, expected, false)
 	}
 
 	tc := &TagChange{}
@@ -88,7 +95,7 @@ func compareDateTimeMissingOffset(existing ExifTagMap, immichTime time.Time, exp
 	return tc
 }
 
-func compareDateTimeFull(existing ExifTagMap, immichTime time.Time, expected string) *TagChange {
+func compareDateTimeFull(existing ExifTagMap, immichTime time.Time, expected string, anchored bool) *TagChange {
 	_, offsetSeconds := immichTime.Zone()
 	offsetStr, tzHours, hasWholeHour := BuildOffsetValues(offsetSeconds)
 	expectedDate := immichTime.Format("2006:01:02 15:04:05")
@@ -98,6 +105,11 @@ func compareDateTimeFull(existing ExifTagMap, immichTime time.Time, expected str
 	oldTZOffset := existing["TimeZoneOffset"]
 
 	momentMatches := DateTimeMatch(oldVal, oldOffset, oldTZOffset, expected)
+	if anchored && momentMatches {
+		offsetText, hasOffsetText := oldOffset.(string)
+		fileTZHours, hasTZHours := oldTZOffset.(float64)
+		momentMatches = (hasOffsetText && strings.TrimSpace(offsetText) == offsetStr) || (!hasOffsetText && hasTZHours && int(fileTZHours)*3600 == offsetSeconds)
+	}
 
 	tc := &TagChange{}
 	if !momentMatches {
@@ -128,4 +140,9 @@ func compareDateTimeFull(existing ExifTagMap, immichTime time.Time, expected str
 		return nil
 	}
 	return tc
+}
+
+func sameWallClock(existing string, t time.Time) bool {
+	parsed, err := ParseDateTime(strings.TrimSpace(existing))
+	return err == nil && parsed.Format("2006-01-02 15:04:05") == t.Format("2006-01-02 15:04:05")
 }

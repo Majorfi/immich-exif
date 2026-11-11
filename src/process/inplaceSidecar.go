@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,7 +19,8 @@ import (
 // with a value its database does not hold: a different one, or one Immich has
 // cleared. Immich writes its own sidecar next to external files edited in
 // Immich; that one agrees and passes. City, state and country are left out:
-// Immich derives them from GPS, not from tags.
+// Immich derives them from GPS, not from tags. Dates are judged separately,
+// by the instant Immich would read.
 func sidecarNote(client *api.ImmichClient, cfg *model.Config, asset model.AssetResponse, local string) (string, error) {
 	registered, err := client.GetSidecarPaths(asset.ID)
 	if code, ok := statusCodeOf(err); ok && code == http.StatusNotFound {
@@ -66,7 +68,7 @@ func sidecarDisagreement(cfg *model.Config, asset model.AssetResponse, tags exif
 	}
 	for _, change := range exif.CompareAssetMetadata(asset, tags) {
 		for _, diff := range change.Diffs {
-			if diff.Symbol == model.DiffChange && !isLocationTag(diff.Tag) {
+			if diff.Symbol == model.DiffChange && !isLocationTag(diff.Tag) && !slices.Contains(dateDiffTags, diff.Tag) {
 				return fmt.Sprintf("disagrees with Immich on %s (%s, Immich has %s)", diff.Tag, diff.Old, diff.New)
 			}
 		}
@@ -131,6 +133,8 @@ func hasZone(date string) bool {
 	n := len(date)
 	return n >= 6 && (date[n-6] == '+' || date[n-6] == '-') && date[n-3] == ':'
 }
+
+var dateDiffTags = []string{"DateTimeOriginal", "OffsetTimeOriginal", "TimeZoneOffset", "XMP-exif:DateTimeOriginal", "XMP-xmp:CreateDate"}
 
 var immichDateTags = []string{
 	"SubSecDateTimeOriginal", "SubSecCreateDate", "DateTimeOriginal", "CreationDate", "CreateDate",

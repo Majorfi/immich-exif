@@ -345,7 +345,8 @@ Immich returns ISO 8601 dates (e.g. `2025-12-10T16:56:36+00:00`). EXIF stores lo
 The tool handles this carefully:
 
 - **The asset's own time zone is honored**: when Immich knows it (`exifInfo.timeZone`, either `Europe/Rome` or `UTC+2` form), the UTC date is re-anchored so the wall-clock time written into the file matches what you see in Immich.
-- **If the file already has `DateTimeOriginal` but no offset**: the existing local time is preserved. The offset is computed from the difference between the file's local time and Immich's UTC time, then written as `OffsetTimeOriginal` and `TimeZoneOffset`.
+- **When Immich knows the time zone, it wins**: the file's date must show that zone's local time and offset. A date or offset that disagrees (for example after the date was changed in Immich) is rewritten, even when it names the same instant. The same applies to videos.
+- **If the file already has `DateTimeOriginal` but no offset, and Immich has no time zone**: the existing local time is preserved. The offset is computed from the difference between the file's local time and Immich's UTC time, then written as `OffsetTimeOriginal` and `TimeZoneOffset`.
 - **If the file has no date at all**: `DateTimeOriginal` is written in EXIF format (`YYYY:MM:DD HH:MM:SS`) along with the offset tags.
 - **If everything matches**: the asset is skipped.
 
