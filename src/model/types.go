@@ -7,6 +7,7 @@ type AssetResponse struct {
 	DeviceAssetID    string           `json:"deviceAssetId"`
 	DeviceID         string           `json:"deviceId"`
 	OriginalFileName string           `json:"originalFileName"`
+	OriginalPath     string           `json:"originalPath"`
 	OriginalMimeType string           `json:"originalMimeType"`
 	Checksum         string           `json:"checksum"`
 	FileCreatedAt    time.Time        `json:"fileCreatedAt"`

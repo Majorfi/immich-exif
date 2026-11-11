@@ -2,7 +2,6 @@ package api
 
 import (
 	"crypto/sha1"
-	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
@@ -41,9 +40,9 @@ func TestReplaceAssetEditsSendsParametersVerbatim(t *testing.T) {
 	}
 }
 
-func sha1Hex(data string) string {
+func sha1Sum(data string) []byte {
 	sum := sha1.Sum([]byte(data))
-	return hex.EncodeToString(sum[:])
+	return sum[:]
 }
 
 func editedRenderServer(t *testing.T, disposition, body string) *httptest.Server {
@@ -62,7 +61,7 @@ func TestDownloadEditedAssetNamesFileFromServer(t *testing.T) {
 	defer server.Close()
 
 	dir := t.TempDir()
-	path, err := NewImmichClient(server.URL, "key").DownloadEditedAsset("asset-1", dir, sha1Hex("original"), nil)
+	path, err := NewImmichClient(server.URL, "key").DownloadEditedAsset("asset-1", dir, sha1Sum("original"), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -80,7 +79,7 @@ func TestDownloadEditedAssetRefusesOriginalFallback(t *testing.T) {
 	defer server.Close()
 
 	dir := t.TempDir()
-	_, err := NewImmichClient(server.URL, "key").DownloadEditedAsset("asset-1", dir, sha1Hex("original"), nil)
+	_, err := NewImmichClient(server.URL, "key").DownloadEditedAsset("asset-1", dir, sha1Sum("original"), nil)
 	if !errors.Is(err, ErrEditedRenderMissing) {
 		t.Fatalf("expected ErrEditedRenderMissing, got %v", err)
 	}
@@ -93,7 +92,7 @@ func TestDownloadEditedAssetRejectsUnsafeName(t *testing.T) {
 	server := editedRenderServer(t, `inline; filename*=UTF-8''..%2Fescape.jpg`, "render")
 	defer server.Close()
 
-	_, err := NewImmichClient(server.URL, "key").DownloadEditedAsset("asset-1", t.TempDir(), sha1Hex("original"), nil)
+	_, err := NewImmichClient(server.URL, "key").DownloadEditedAsset("asset-1", t.TempDir(), sha1Sum("original"), nil)
 	if err == nil || !strings.Contains(err.Error(), "unsafe file name") {
 		t.Fatalf("expected unsafe name error, got %v", err)
 	}
