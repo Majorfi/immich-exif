@@ -98,10 +98,10 @@ func sidecarDisagreement(cfg *model.Config, asset model.AssetResponse, tags exif
 // as an instant when the sidecar date carries an offset, as wall-clock time in
 // the asset's zone when it does not, which is how Immich reads either.
 func sidecarDateDisagreement(info *model.ExifInfo, tags exif.ExifTagMap) string {
-	var date string
-	for _, key := range immichDateTags {
-		if value := tags[key]; value != nil && strings.TrimSpace(fmt.Sprint(value)) != "" {
-			date = strings.TrimSpace(fmt.Sprint(value))
+	var key, date string
+	for _, candidate := range immichDateTags {
+		if value := tags[candidate]; value != nil && strings.TrimSpace(fmt.Sprint(value)) != "" {
+			key, date = candidate, strings.TrimSpace(fmt.Sprint(value))
 			break
 		}
 	}
@@ -111,7 +111,8 @@ func sidecarDateDisagreement(info *model.ExifInfo, tags exif.ExifTagMap) string 
 	if info.DateTimeOriginal == nil || *info.DateTimeOriginal == "" {
 		return "holds a capture date that Immich does not have"
 	}
-	if exif.ReadsAsImmichDate(info, tags, date) {
+	date, same := exif.ReadImmichDate(info, tags, key, date)
+	if same {
 		return ""
 	}
 	return fmt.Sprintf("holds capture date %s while Immich has %s", date, *info.DateTimeOriginal)

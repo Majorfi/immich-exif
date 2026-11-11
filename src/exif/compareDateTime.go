@@ -23,7 +23,7 @@ func CompareDateTime(exif *model.ExifInfo, existing ExifTagMap) *TagChange {
 			tc.Args = append(tc.Args, fmt.Sprintf("-DateTimeOriginal=%s", expected))
 			tc.Diffs = appendStringDiff(tc.Diffs, "DateTimeOriginal", existing["DateTimeOriginal"], expected)
 		}
-		appendXMPDateArgs(tc, expected, existing, nil)
+		appendDateArgs(tc, xmpDateTags, expected, existing, nil)
 		if len(tc.Args) == 0 {
 			return nil
 		}
@@ -34,9 +34,9 @@ func CompareDateTime(exif *model.ExifInfo, existing ExifTagMap) *TagChange {
 	}
 
 	existingDate, _ := existing["DateTimeOriginal"].(string)
-	existingHasOffset := existing["OffsetTimeOriginal"] != nil || existing["TimeZoneOffset"] != nil || HasInlineOffset(existingDate)
+	existingHasOffset := existing["OffsetTimeOriginal"] != nil || existing["TimeZoneOffset"] != nil || hasInlineOffset(existingDate)
 	var tc *TagChange
-	if existing["DateTimeOriginal"] != nil && !existingHasOffset && (!date.anchored || date.matches(existingDate, true)) {
+	if existing["DateTimeOriginal"] != nil && !existingHasOffset && (!date.anchored || date.matches(existingDate, false, false)) {
 		tc = compareDateTimeMissingOffset(existing, date, expected)
 	} else {
 		tc = compareDateTimeFull(existing, date)
@@ -45,19 +45,23 @@ func CompareDateTime(exif *model.ExifInfo, existing ExifTagMap) *TagChange {
 	if tc == nil {
 		tc = &TagChange{}
 	}
-	appendXMPDateArgs(tc, expected, existing, &date)
+	appendDateArgs(tc, xmpDateTags, expected, existing, &date)
 	if len(tc.Args) == 0 {
 		return nil
 	}
 	return tc
 }
 
-func appendXMPDateArgs(tc *TagChange, isoDate string, existing ExifTagMap, date *immichDate) {
-	for _, tag := range []string{"XMP-exif:DateTimeOriginal", "XMP-xmp:CreateDate"} {
-		value, _ := existing[tag].(string)
-		matched := DateTimeStringMatch(existing[tag], isoDate)
+var xmpDateTags = []string{"XMP-exif:DateTimeOriginal", "XMP-xmp:CreateDate"}
+
+func appendDateArgs(tc *TagChange, tags []string, isoDate string, existing ExifTagMap, date *immichDate) {
+	for _, tag := range tags {
+		var matched bool
 		if date != nil {
-			matched = date.matches(value, true)
+			value, _ := existing[tag].(string)
+			matched = date.matches(value, true, true)
+		} else {
+			matched = DateTimeStringMatch(existing[tag], isoDate)
 		}
 		if !matched {
 			tc.Args = append(tc.Args, fmt.Sprintf("-%s=%s", tag, isoDate))
@@ -97,7 +101,7 @@ func compareDateTimeFull(existing ExifTagMap, date immichDate) *TagChange {
 	oldOffset := existing["OffsetTimeOriginal"]
 	oldTZOffset := existing["TimeZoneOffset"]
 	oldDate, isString := oldVal.(string)
-	momentMatches := isString && date.matches(withSeparateOffset(existing, oldDate), true)
+	momentMatches := isString && date.matches(withSeparateOffset(existing, oldDate), true, false) && separateOffsetsAgree(existing, oldDate)
 
 	tc := &TagChange{}
 	if !momentMatches {

@@ -303,3 +303,12 @@ func TestSidecarDateHonoursASeparateOffsetTag(t *testing.T) {
 		t.Fatalf("a matching separate offset must pass, got %q", note)
 	}
 }
+
+func TestSidecarSeparateOffsetOnlyDescribesDateTimeOriginal(t *testing.T) {
+	date := "2025-12-10T15:56:36Z"
+	asset := model.AssetResponse{ExifInfo: &model.ExifInfo{DateTimeOriginal: &date}}
+	tags := exif.ExifTagMap{"DateTimeUTC": "2025:12:10 15:56:36", "OffsetTimeOriginal": "+01:00"}
+	if note := sidecarDisagreement(&model.Config{}, asset, tags); note != "" {
+		t.Fatalf("OffsetTimeOriginal does not apply to DateTimeUTC, got %q", note)
+	}
+}

@@ -110,18 +110,11 @@ func compareVideoDateTime(exif *model.ExifInfo, existing ExifTagMap) *TagChange 
 	}
 
 	change := &TagChange{}
-	for _, tag := range []string{"DateTimeOriginal", "XMP-exif:DateTimeOriginal", "XMP-xmp:CreateDate"} {
-		value, _ := existing[tag].(string)
-		matched := DateTimeStringMatch(existing[tag], expected)
-		if ok {
-			matched = date.matches(value, true)
-		}
-		if matched {
-			continue
-		}
-		change.Args = append(change.Args, fmt.Sprintf("-%s=%s", tag, expected))
-		change.Diffs = appendStringDiff(change.Diffs, tag, existing[tag], expected)
+	var anchor *immichDate
+	if ok {
+		anchor = &date
 	}
+	appendDateArgs(change, []string{"DateTimeOriginal", "XMP-exif:DateTimeOriginal", "XMP-xmp:CreateDate"}, expected, existing, anchor)
 	if len(change.Args) == 0 {
 		return nil
 	}

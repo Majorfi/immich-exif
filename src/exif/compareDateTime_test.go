@@ -87,3 +87,16 @@ func TestCompareDateTimeReadsAZuluOffsetTag(t *testing.T) {
 		t.Fatalf("Z is UTC's offset and must match, got %v", args)
 	}
 }
+
+func TestCompareDateTimeRewritesAConflictingSeparateOffset(t *testing.T) {
+	dt, zone := "2025-12-10T15:56:36Z", "UTC+1"
+	for name, existing := range map[string]ExifTagMap{
+		"TimeZoneOffset":     {"DateTimeOriginal": "2025:12:10 16:56:36+01:00", "TimeZoneOffset": float64(5)},
+		"OffsetTimeOriginal": {"DateTimeOriginal": "2025:12:10 16:56:36+01:00", "OffsetTimeOriginal": "+05:00"},
+	} {
+		args := CollectExifArgs(CompareMetadata(&model.ExifInfo{DateTimeOriginal: &dt, TimeZone: &zone}, existing))
+		if !slices.Contains(args, "-OffsetTimeOriginal=+01:00") {
+			t.Fatalf("%s: a separate offset contradicting the date must be rewritten to Immich's, got %v", name, args)
+		}
+	}
+}
