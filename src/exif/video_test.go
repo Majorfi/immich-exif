@@ -160,3 +160,77 @@ func TestCompareAssetMetadataRoutesVideoAndPhoto(t *testing.T) {
 		t.Fatal("expected metadata args for a photo")
 	}
 }
+
+func TestCompareVideoDateTimeAnchorsOnImmichTimeZone(t *testing.T) {
+	cases := map[string]struct{ zone, want string }{
+		"utc offset": {"UTC+9", "2026-06-25T08:20:13+09:00"},
+		"iana zone":  {"Asia/Tokyo", "2026-06-25T08:20:13+09:00"},
+		"no zone":    {"", "2026-06-24T23:20:13+00:00"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			dt := "2026-06-24T23:20:13+00:00"
+			info := &model.ExifInfo{DateTimeOriginal: &dt}
+			if tc.zone != "" {
+				info.TimeZone = &tc.zone
+			}
+			change := compareVideoDateTime(info, ExifTagMap{})
+			if change == nil {
+				t.Fatal("expected a change for a video without dates")
+			}
+			for _, tag := range []string{"DateTimeOriginal", "XMP-exif:DateTimeOriginal", "XMP-xmp:CreateDate"} {
+				if !slices.Contains(change.Args, "-"+tag+"="+tc.want) {
+					t.Fatalf("expected -%s=%s, got %v", tag, tc.want, change.Args)
+				}
+			}
+		})
+	}
+}
+
+func TestCompareVideoDateTimeKeepsSubSeconds(t *testing.T) {
+	dt := "2026-06-24T23:20:13.822Z"
+	zone := "UTC+9"
+	change := compareVideoDateTime(&model.ExifInfo{DateTimeOriginal: &dt, TimeZone: &zone}, ExifTagMap{})
+	if change == nil || !slices.Contains(change.Args, "-DateTimeOriginal=2026-06-25T08:20:13.822+09:00") {
+		t.Fatalf("expected the sub-seconds kept on the anchored date, got %v", change)
+	}
+}
+
+func TestCompareVideoDateTimeKeepsAnchoredFile(t *testing.T) {
+	dt := "2026-06-24T23:20:13+00:00"
+	zone := "UTC+9"
+	existing := ExifTagMap{
+		"DateTimeOriginal":          "2026:06:25 08:20:13+09:00",
+		"XMP-exif:DateTimeOriginal": "2026:06:25 08:20:13+09:00",
+		"XMP-xmp:CreateDate":        "2026:06:25 08:20:13+09:00",
+	}
+	if change := compareVideoDateTime(&model.ExifInfo{DateTimeOriginal: &dt, TimeZone: &zone}, existing); change != nil {
+		t.Fatalf("a file already anchored on the zone must not be rewritten, got %v", change.Args)
+	}
+}
+
+func TestCompareVideoDateTimeRepairsUTCWrittenFile(t *testing.T) {
+	dt := "2026-06-24T23:20:13+00:00"
+	zone := "UTC+9"
+	existing := ExifTagMap{
+		"DateTimeOriginal":          "2026:06:24 23:20:13+00:00",
+		"XMP-exif:DateTimeOriginal": "2026:06:24 23:20:13+00:00",
+		"XMP-xmp:CreateDate":        "2026:06:24 23:20:13+00:00",
+	}
+	change := compareVideoDateTime(&model.ExifInfo{DateTimeOriginal: &dt, TimeZone: &zone}, existing)
+	if change == nil || !slices.Contains(change.Args, "-DateTimeOriginal=2026-06-25T08:20:13+09:00") {
+		t.Fatalf("a date written in UTC must be re-anchored on the asset's zone, got %v", change)
+	}
+}
+
+func TestCompareVideoDateTimeWithoutZoneMatchesInstant(t *testing.T) {
+	dt := "2026-06-24T23:20:13+00:00"
+	existing := ExifTagMap{
+		"DateTimeOriginal":          "2026:06:25 08:20:13+09:00",
+		"XMP-exif:DateTimeOriginal": "2026:06:25 08:20:13+09:00",
+		"XMP-xmp:CreateDate":        "2026:06:25 08:20:13+09:00",
+	}
+	if change := compareVideoDateTime(&model.ExifInfo{DateTimeOriginal: &dt}, existing); change != nil {
+		t.Fatalf("without a zone from Immich the file's own offset must be kept, got %v", change.Args)
+	}
+}
