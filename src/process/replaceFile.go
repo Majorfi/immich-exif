@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 var errNotDurable = errors.New("the rename may not survive a power loss")
@@ -37,6 +38,13 @@ func replaceFile(destination, source string, original os.FileInfo) error {
 	}
 	if closeErr := staged.Close(); err == nil {
 		err = closeErr
+	}
+	if err == nil {
+		modified := time.Now()
+		if floor := original.ModTime().Add(2 * time.Second); modified.Before(floor) {
+			modified = floor
+		}
+		err = os.Chtimes(staged.Name(), modified, modified)
 	}
 	if err != nil {
 		return err

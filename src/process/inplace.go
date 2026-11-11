@@ -21,6 +21,7 @@ type inPlaceTarget struct {
 	root  string
 	local string
 	info  os.FileInfo
+	sum   []byte
 }
 
 // resolveInPlace returns the local file an external asset is updated through,
@@ -64,6 +65,9 @@ func checkLocalFile(root, local string) string {
 	if !info.Mode().IsRegular() {
 		return fmt.Sprintf("%s is not a regular file", local)
 	}
+	if hasACL(local) {
+		return fmt.Sprintf("%s carries an access control list the tool cannot carry over", local)
+	}
 	links, uid, ok := fileOwnership(info)
 	if !ok {
 		return "cannot read the file's ownership on this system"
@@ -85,11 +89,11 @@ func prepareInPlace(client *api.ImmichClient, cfg *model.Config, asset model.Ass
 	if err != nil {
 		return target, "", err
 	}
-	local, err := fileChecksumSHA1(target.local)
+	target.sum, err = fileChecksumSHA1(target.local)
 	if err != nil {
 		return target, "", err
 	}
-	if !bytes.Equal(served, local) {
+	if !bytes.Equal(served, target.sum) {
 		return target, fmt.Sprintf("%s differs from the file Immich serves; check -in-place-map", target.local), nil
 	}
 	target.info, err = os.Lstat(target.local)
@@ -146,7 +150,8 @@ func changedSince(target inPlaceTarget) string {
 	if err != nil {
 		return fmt.Sprintf("cannot re-read %s: %v", target.local, err)
 	}
-	if !os.SameFile(info, target.info) || info.Size() != target.info.Size() || !info.ModTime().Equal(target.info.ModTime()) {
+	sum, err := fileChecksumSHA1(target.local)
+	if err != nil || !os.SameFile(info, target.info) || info.Size() != target.info.Size() || !info.ModTime().Equal(target.info.ModTime()) || !bytes.Equal(sum, target.sum) {
 		return fmt.Sprintf("%s changed on disk while processing; re-run to pick it up", target.local)
 	}
 	return ""

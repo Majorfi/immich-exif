@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -44,5 +45,25 @@ func TestReplaceFileKeepsModeAndExtendedAttributes(t *testing.T) {
 	}
 	if leftovers, _ := filepath.Glob(filepath.Join(dir, ".immich-exif-*")); len(leftovers) != 0 {
 		t.Fatalf("staged file left behind: %v", leftovers)
+	}
+}
+
+func TestReplaceFileMovesTheModificationTimeForward(t *testing.T) {
+	dir := t.TempDir()
+	destination := filepath.Join(dir, "photo.jpg")
+	source := filepath.Join(dir, "rewritten.jpg")
+	_ = os.WriteFile(destination, []byte("old"), 0644)
+	_ = os.WriteFile(source, []byte("new"), 0644)
+	future := time.Now().Add(time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(destination, future, future); err != nil {
+		t.Fatal(err)
+	}
+	original, _ := os.Lstat(destination)
+	if err := replaceFile(destination, source, original); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	info, _ := os.Stat(destination)
+	if !info.ModTime().After(future) {
+		t.Fatalf("mtime %v must move past the original %v so a library scan sees the change", info.ModTime(), future)
 	}
 }

@@ -233,6 +233,7 @@ func TestSidecarDisagreementCatchesValuesImmichCleared(t *testing.T) {
 		"description": {"Description": "old caption"},
 		"gps":         {"GPSLatitude": -33.8},
 		"rating":      {"Rating": float64(3)},
+		"create date": {"CreateDate": "2019:01:02 03:04:05"},
 	} {
 		if note := sidecarDisagreement(cfg, asset, tags); note == "" {
 			t.Fatalf("%s: a sidecar value Immich no longer has must block", name)

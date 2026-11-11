@@ -81,7 +81,7 @@ func sidecarDisagreement(cfg *model.Config, asset model.AssetResponse, tags exif
 	}{
 		{"a description", hasText(tags, "Description", "ImageDescription", "XMP-dc:Description"), info.Description != nil && *info.Description != ""},
 		{"a GPS position", tags["GPSLatitude"] != nil || tags["XMP-exif:GPSLatitude"] != nil, info.Latitude != nil},
-		{"a capture date", tags["DateTimeOriginal"] != nil || tags["XMP-exif:DateTimeOriginal"] != nil, info.DateTimeOriginal != nil && *info.DateTimeOriginal != ""},
+		{"a capture date", hasText(tags, immichDateTags...), info.DateTimeOriginal != nil && *info.DateTimeOriginal != ""},
 		{"a rating", hasNonZero(tags, "Rating", "XMP-xmp:Rating"), info.Rating != nil && *info.Rating != 0},
 	}
 	for _, field := range lacking {
@@ -90,6 +90,12 @@ func sidecarDisagreement(cfg *model.Config, asset model.AssetResponse, tags exif
 		}
 	}
 	return ""
+}
+
+var immichDateTags = []string{
+	"SubSecDateTimeOriginal", "SubSecCreateDate", "DateTimeOriginal", "CreationDate", "CreateDate",
+	"MediaCreateDate", "DateTimeCreated", "GPSDateTime", "DateTimeUTC", "SonyDateTime2",
+	"XMP-exif:DateTimeOriginal", "XMP-xmp:CreateDate",
 }
 
 func hasText(tags exif.ExifTagMap, keys ...string) bool {
