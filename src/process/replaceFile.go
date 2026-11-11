@@ -34,17 +34,17 @@ func replaceFile(destination, source string, original os.FileInfo) error {
 		err = preserveAttributes(destination, original, staged)
 	}
 	if err == nil {
-		err = staged.Sync()
-	}
-	if closeErr := staged.Close(); err == nil {
-		err = closeErr
-	}
-	if err == nil {
 		modified := time.Now()
 		if floor := original.ModTime().Add(2 * time.Second); modified.Before(floor) {
 			modified = floor
 		}
 		err = os.Chtimes(staged.Name(), modified, modified)
+	}
+	if err == nil {
+		err = staged.Sync()
+	}
+	if closeErr := staged.Close(); err == nil {
+		err = closeErr
 	}
 	if err != nil {
 		return err

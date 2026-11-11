@@ -1,7 +1,7 @@
-//go:build !darwin
+//go:build windows
 
 package process
 
 func hasACL(string) bool {
-	return false
+	return true
 }

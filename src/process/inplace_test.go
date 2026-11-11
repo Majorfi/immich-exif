@@ -258,3 +258,26 @@ func TestInPlaceReportsSuccessWhenImmichIsSlowToReread(t *testing.T) {
 		t.Fatalf("file not rewritten: %q", data)
 	}
 }
+
+func TestSidecarDisagreementFollowsImmichDatePrecedence(t *testing.T) {
+	cfg := &model.Config{}
+	date, zone := "2021-05-06T09:08:09+00:00", "UTC+10"
+	asset := model.AssetResponse{ExifInfo: &model.ExifInfo{DateTimeOriginal: &date, TimeZone: &zone}}
+	for name, tags := range map[string]exif.ExifTagMap{
+		"immich-written": {"DateTimeOriginal": "2021:05:06 19:08:09.000+10:00", "XMP-exif:DateTimeOriginal": "2021:05:06 19:08:09.000+10:00"},
+		"wall clock":     {"DateTimeOriginal": "2021:05:06 19:08:09"},
+	} {
+		if note := sidecarDisagreement(cfg, asset, tags); note != "" {
+			t.Fatalf("%s: a sidecar date matching Immich must pass, got %q", name, note)
+		}
+	}
+	for name, tags := range map[string]exif.ExifTagMap{
+		"stale create date": {"CreateDate": "2019:01:02 03:04:05"},
+		"stale subsec date": {"SubSecDateTimeOriginal": "2019:01:02 03:04:05.120+00:00", "DateTimeOriginal": "2021:05:06 19:08:09.000+10:00"},
+		"source image time": {"SourceImageCreateTime": "2019:01:02 03:04:05Z"},
+	} {
+		if note := sidecarDisagreement(cfg, asset, tags); note == "" {
+			t.Fatalf("%s: the date Immich would pick from the sidecar differs and must block", name)
+		}
+	}
+}

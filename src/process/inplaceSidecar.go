@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/majorfi/immich-exif/api"
 	"github.com/majorfi/immich-exif/exif"
@@ -81,7 +82,6 @@ func sidecarDisagreement(cfg *model.Config, asset model.AssetResponse, tags exif
 	}{
 		{"a description", hasText(tags, "Description", "ImageDescription", "XMP-dc:Description"), info.Description != nil && *info.Description != ""},
 		{"a GPS position", tags["GPSLatitude"] != nil || tags["XMP-exif:GPSLatitude"] != nil, info.Latitude != nil},
-		{"a capture date", hasText(tags, immichDateTags...), info.DateTimeOriginal != nil && *info.DateTimeOriginal != ""},
 		{"a rating", hasNonZero(tags, "Rating", "XMP-xmp:Rating"), info.Rating != nil && *info.Rating != 0},
 	}
 	for _, field := range lacking {
@@ -89,13 +89,52 @@ func sidecarDisagreement(cfg *model.Config, asset model.AssetResponse, tags exif
 			return "holds " + field.name + " that Immich does not have"
 		}
 	}
-	return ""
+	return sidecarDateDisagreement(info, tags)
+}
+
+// sidecarDateDisagreement compares the date Immich would take from the
+// sidecar, the first of its date tags in Immich's order, with Immich's own:
+// as an instant when the sidecar date carries an offset, as wall-clock time in
+// the asset's zone when it does not, which is how Immich reads either.
+func sidecarDateDisagreement(info *model.ExifInfo, tags exif.ExifTagMap) string {
+	var date string
+	for _, key := range immichDateTags {
+		if value := tags[key]; value != nil && strings.TrimSpace(fmt.Sprint(value)) != "" {
+			date = strings.TrimSpace(fmt.Sprint(value))
+			break
+		}
+	}
+	if date == "" {
+		return ""
+	}
+	if info.DateTimeOriginal == nil || *info.DateTimeOriginal == "" {
+		return "holds a capture date that Immich does not have"
+	}
+	sidecarTime, sidecarErr := exif.ParseDateTime(date)
+	immichTime, immichErr := exif.ParseDateTime(*info.DateTimeOriginal)
+	local, ok := exif.CorrectedLocalTime(info)
+	if sidecarErr == nil && immichErr == nil && ok {
+		if hasZone(date) && sidecarTime.Truncate(time.Second).Equal(immichTime.Truncate(time.Second)) {
+			return ""
+		}
+		if !hasZone(date) && sidecarTime.Format("2006-01-02 15:04:05") == local.Format("2006-01-02 15:04:05") {
+			return ""
+		}
+	}
+	return fmt.Sprintf("holds capture date %s while Immich has %s", date, *info.DateTimeOriginal)
+}
+
+func hasZone(date string) bool {
+	if strings.HasSuffix(date, "Z") {
+		return true
+	}
+	n := len(date)
+	return n >= 6 && (date[n-6] == '+' || date[n-6] == '-') && date[n-3] == ':'
 }
 
 var immichDateTags = []string{
 	"SubSecDateTimeOriginal", "SubSecCreateDate", "DateTimeOriginal", "CreationDate", "CreateDate",
-	"MediaCreateDate", "DateTimeCreated", "GPSDateTime", "DateTimeUTC", "SonyDateTime2",
-	"XMP-exif:DateTimeOriginal", "XMP-xmp:CreateDate",
+	"MediaCreateDate", "DateTimeCreated", "GPSDateTime", "DateTimeUTC", "SonyDateTime2", "SourceImageCreateTime",
 }
 
 func hasText(tags exif.ExifTagMap, keys ...string) bool {

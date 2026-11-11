@@ -14,3 +14,7 @@ func hasACL(path string) bool {
 	}
 	return strings.Count(strings.TrimSpace(string(output)), "\n") > 0
 }
+
+func clearACL(path string) error {
+	return exec.Command("/bin/chmod", "-N", path).Run()
+}
