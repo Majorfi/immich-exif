@@ -2,13 +2,11 @@ package exif
 
 import (
 	"fmt"
-	"strings"
-	"time"
 
 	"github.com/majorfi/immich-exif/model"
 )
 
-// CompareDateTime anchors Immich's UTC date on the asset's zone. Without a
+// CompareDateTime writes Immich's date anchored on the asset's zone. Without a
 // zone, a file date lacking an offset is the only clue to it, so the offset is
 // inferred from its wall clock. With one, Immich's zone wins: a wall clock or
 // offset left behind by a date edited in Immich is rewritten, not reinterpreted.
@@ -18,64 +16,60 @@ func CompareDateTime(exif *model.ExifInfo, existing ExifTagMap) *TagChange {
 	}
 	expected := *exif.DateTimeOriginal
 
-	immichTime, err := ParseDateTime(expected)
-	if err != nil {
+	date, ok := immichDateOf(exif)
+	if !ok {
 		tc := &TagChange{}
 		if !StringMatch(existing["DateTimeOriginal"], expected) {
 			tc.Args = append(tc.Args, fmt.Sprintf("-DateTimeOriginal=%s", expected))
 			tc.Diffs = appendStringDiff(tc.Diffs, "DateTimeOriginal", existing["DateTimeOriginal"], expected)
 		}
-		appendXMPDateArgs(tc, expected, existing)
+		appendXMPDateArgs(tc, expected, existing, nil)
 		if len(tc.Args) == 0 {
 			return nil
 		}
 		return tc
 	}
-
-	// Immich serializes dateTimeOriginal as UTC ISO; re-anchor it to the asset's
-	// own time zone (exifInfo.timeZone) so the wall-clock time written into the
-	// file matches what the user sees, instead of collapsing to UTC.
-	loc := resolveImmichLocation(exif.TimeZone)
-	if loc != nil {
-		immichTime = immichTime.In(loc)
-		expected = immichTime.Format("2006-01-02T15:04:05.000-07:00")
+	if date.anchored {
+		expected = date.local.Format("2006-01-02T15:04:05.000-07:00")
 	}
 
-	existingHasDate := existing != nil && existing["DateTimeOriginal"] != nil
 	existingDate, _ := existing["DateTimeOriginal"].(string)
-	existingHasOffset := existing != nil && (existing["OffsetTimeOriginal"] != nil || existing["TimeZoneOffset"] != nil || HasInlineOffset(existingDate))
+	existingHasOffset := existing["OffsetTimeOriginal"] != nil || existing["TimeZoneOffset"] != nil || HasInlineOffset(existingDate)
 	var tc *TagChange
-	if existingHasDate && !existingHasOffset && (loc == nil || sameWallClock(existingDate, immichTime)) {
-		tc = compareDateTimeMissingOffset(existing, immichTime, expected, loc != nil)
+	if existing["DateTimeOriginal"] != nil && !existingHasOffset && (!date.anchored || date.matches(existingDate, true)) {
+		tc = compareDateTimeMissingOffset(existing, date, expected)
 	} else {
-		tc = compareDateTimeFull(existing, immichTime, expected, loc != nil)
+		tc = compareDateTimeFull(existing, date)
 	}
 
 	if tc == nil {
 		tc = &TagChange{}
 	}
-	appendXMPDateArgs(tc, expected, existing)
+	appendXMPDateArgs(tc, expected, existing, &date)
 	if len(tc.Args) == 0 {
 		return nil
 	}
 	return tc
 }
 
-func appendXMPDateArgs(tc *TagChange, isoDate string, existing ExifTagMap) {
-	if !DateTimeStringMatch(existing["XMP-exif:DateTimeOriginal"], isoDate) {
-		tc.Args = append(tc.Args, fmt.Sprintf("-XMP-exif:DateTimeOriginal=%s", isoDate))
-		tc.Diffs = appendStringDiff(tc.Diffs, "XMP-exif:DateTimeOriginal", existing["XMP-exif:DateTimeOriginal"], isoDate)
-	}
-	if !DateTimeStringMatch(existing["XMP-xmp:CreateDate"], isoDate) {
-		tc.Args = append(tc.Args, fmt.Sprintf("-XMP-xmp:CreateDate=%s", isoDate))
-		tc.Diffs = appendStringDiff(tc.Diffs, "XMP-xmp:CreateDate", existing["XMP-xmp:CreateDate"], isoDate)
+func appendXMPDateArgs(tc *TagChange, isoDate string, existing ExifTagMap, date *immichDate) {
+	for _, tag := range []string{"XMP-exif:DateTimeOriginal", "XMP-xmp:CreateDate"} {
+		value, _ := existing[tag].(string)
+		matched := DateTimeStringMatch(existing[tag], isoDate)
+		if date != nil {
+			matched = date.matches(value, true)
+		}
+		if !matched {
+			tc.Args = append(tc.Args, fmt.Sprintf("-%s=%s", tag, isoDate))
+			tc.Diffs = appendStringDiff(tc.Diffs, tag, existing[tag], isoDate)
+		}
 	}
 }
 
-func compareDateTimeMissingOffset(existing ExifTagMap, immichTime time.Time, expected string, anchored bool) *TagChange {
+func compareDateTimeMissingOffset(existing ExifTagMap, date immichDate, expected string) *TagChange {
 	offsetStr, tzHours, hasWholeHour, canInfer := DeriveOffsetValuesForMissingOffset(existing, expected)
 	if !canInfer {
-		return compareDateTimeFull(existing, immichTime, expected, anchored)
+		return compareDateTimeFull(existing, date)
 	}
 
 	tc := &TagChange{}
@@ -94,24 +88,16 @@ func compareDateTimeMissingOffset(existing ExifTagMap, immichTime time.Time, exp
 	return tc
 }
 
-func compareDateTimeFull(existing ExifTagMap, immichTime time.Time, expected string, anchored bool) *TagChange {
-	_, offsetSeconds := immichTime.Zone()
+func compareDateTimeFull(existing ExifTagMap, date immichDate) *TagChange {
+	_, offsetSeconds := date.local.Zone()
 	offsetStr, tzHours, hasWholeHour := BuildOffsetValues(offsetSeconds)
-	expectedDate := immichTime.Format("2006:01:02 15:04:05")
+	expectedDate := date.local.Format("2006:01:02 15:04:05")
 
 	oldVal := existing["DateTimeOriginal"]
 	oldOffset := existing["OffsetTimeOriginal"]
 	oldTZOffset := existing["TimeZoneOffset"]
-
-	momentMatches := DateTimeMatch(oldVal, oldOffset, oldTZOffset, expected)
-	if anchored && momentMatches {
-		offsetText, hasOffsetText := oldOffset.(string)
-		fileTZHours, hasTZHours := oldTZOffset.(float64)
-		inlineDate, _ := oldVal.(string)
-		momentMatches = (hasOffsetText && offsetTextSeconds(offsetText) == offsetSeconds && validOffsetText(offsetText)) ||
-			(!hasOffsetText && hasTZHours && int(fileTZHours)*3600 == offsetSeconds) ||
-			(!hasOffsetText && !hasTZHours && inlineOffsetSeconds(inlineDate) == offsetSeconds && HasInlineOffset(inlineDate))
-	}
+	oldDate, isString := oldVal.(string)
+	momentMatches := isString && date.matches(withSeparateOffset(existing, oldDate), true)
 
 	tc := &TagChange{}
 	if !momentMatches {
@@ -142,41 +128,4 @@ func compareDateTimeFull(existing ExifTagMap, immichTime time.Time, expected str
 		return nil
 	}
 	return tc
-}
-
-func sameWallClock(existing string, t time.Time) bool {
-	parsed, err := ParseDateTime(strings.TrimSpace(existing))
-	return err == nil && parsed.Format("2006-01-02 15:04:05") == t.Format("2006-01-02 15:04:05")
-}
-
-func HasInlineOffset(date string) bool {
-	date = strings.TrimSpace(date)
-	if strings.HasSuffix(date, "Z") {
-		return true
-	}
-	n := len(date)
-	return n >= 6 && (date[n-6] == '+' || date[n-6] == '-') && date[n-3] == ':'
-}
-
-func inlineOffsetSeconds(date string) int {
-	parsed, err := ParseDateTime(strings.TrimSpace(date))
-	if err != nil {
-		return 0
-	}
-	_, offset := parsed.Zone()
-	return offset
-}
-
-func validOffsetText(text string) bool {
-	_, err := time.Parse("Z07:00", strings.TrimSpace(text))
-	return err == nil
-}
-
-func offsetTextSeconds(text string) int {
-	parsed, err := time.Parse("Z07:00", strings.TrimSpace(text))
-	if err != nil {
-		return 0
-	}
-	_, offset := parsed.Zone()
-	return offset
 }

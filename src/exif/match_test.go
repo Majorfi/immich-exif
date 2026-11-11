@@ -274,79 +274,6 @@ func TestBuildOffsetValues(t *testing.T) {
 	}
 }
 
-func TestDateTimeMatch(t *testing.T) {
-	testCases := []struct {
-		name     string
-		val      any
-		offset   any
-		tzOffset any
-		expected string
-		want     bool
-	}{
-		{
-			name:     "nil existing returns false",
-			val:      nil,
-			expected: "2025-12-10T16:56:36+01:00",
-			want:     false,
-		},
-		{
-			name:     "exact match with offset",
-			val:      "2025:12:10 16:56:36",
-			offset:   "+01:00",
-			expected: "2025-12-10T16:56:36+01:00",
-			want:     true,
-		},
-		{
-			name:     "same moment different timezone",
-			val:      "2025:12:10 17:56:36",
-			offset:   "+02:00",
-			expected: "2025-12-10T16:56:36+01:00",
-			want:     true,
-		},
-		{
-			name:     "different moment returns false",
-			val:      "2025:12:10 18:00:00",
-			offset:   "+01:00",
-			expected: "2025-12-10T16:56:36+01:00",
-			want:     false,
-		},
-		{
-			name:     "timezone offset as float64",
-			val:      "2025:12:10 16:56:36",
-			tzOffset: float64(1),
-			expected: "2025-12-10T16:56:36+01:00",
-			want:     true,
-		},
-		{
-			name:     "wrong type for existing returns false",
-			val:      42,
-			expected: "2025-12-10T16:56:36+01:00",
-			want:     false,
-		},
-		{
-			name:     "unparseable expected falls back to string compare",
-			val:      "custom-date",
-			expected: "custom-date",
-			want:     true,
-		},
-		{
-			name:     "unparseable expected string mismatch",
-			val:      "custom-date",
-			expected: "other-date",
-			want:     false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := DateTimeMatch(tc.val, tc.offset, tc.tzOffset, tc.expected)
-			if got != tc.want {
-				t.Fatalf("expected %v, got %v", tc.want, got)
-			}
-		})
-	}
-}
-
 func TestOffsetSecondsArePlausibleExtraCases(t *testing.T) {
 	testCases := []struct {
 		name    string
@@ -371,24 +298,6 @@ func TestOffsetSecondsArePlausibleExtraCases(t *testing.T) {
 				t.Fatalf("expected %v, got %v", tc.want, got)
 			}
 		})
-	}
-}
-
-func TestDateTimeMatchUnparseableExistingWithOffset(t *testing.T) {
-	got := DateTimeMatch("not-a-date", "+01:00", nil, "2025-12-10T16:56:36+01:00")
-	if got {
-		t.Fatal("expected false when existing is not parseable even with offset appended")
-	}
-}
-
-func TestDateTimeMatchExistingParsesAsUTCWhenNoOffset(t *testing.T) {
-	got := DateTimeMatch("2025:12:10 16:56:36", nil, nil, "2025-12-10T16:56:36Z")
-	if !got {
-		t.Fatal("expected true when both parse as UTC and match")
-	}
-	got2 := DateTimeMatch("2025:12:10 17:00:00", nil, nil, "2025-12-10T16:56:36Z")
-	if got2 {
-		t.Fatal("expected false when times differ")
 	}
 }
 

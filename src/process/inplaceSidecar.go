@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/majorfi/immich-exif/api"
 	"github.com/majorfi/immich-exif/exif"
@@ -109,26 +108,11 @@ func sidecarDateDisagreement(info *model.ExifInfo, tags exif.ExifTagMap) string 
 	if date == "" {
 		return ""
 	}
-	if !exif.HasInlineOffset(date) {
-		if offset, ok := tags["OffsetTimeOriginal"].(string); ok && strings.TrimSpace(offset) != "" {
-			date += strings.TrimSpace(offset)
-		} else if hours, ok := tags["TimeZoneOffset"].(float64); ok {
-			date += fmt.Sprintf("%+03d:00", int(hours))
-		}
-	}
 	if info.DateTimeOriginal == nil || *info.DateTimeOriginal == "" {
 		return "holds a capture date that Immich does not have"
 	}
-	sidecarTime, sidecarErr := exif.ParseDateTime(date)
-	immichTime, immichErr := exif.ParseDateTime(*info.DateTimeOriginal)
-	local, ok := exif.CorrectedLocalTime(info)
-	if sidecarErr == nil && immichErr == nil && ok {
-		if exif.HasInlineOffset(date) && sidecarTime.Truncate(time.Second).Equal(immichTime.Truncate(time.Second)) {
-			return ""
-		}
-		if !exif.HasInlineOffset(date) && sidecarTime.Format("2006-01-02 15:04:05") == local.Format("2006-01-02 15:04:05") {
-			return ""
-		}
+	if exif.ReadsAsImmichDate(info, tags, date) {
+		return ""
 	}
 	return fmt.Sprintf("holds capture date %s while Immich has %s", date, *info.DateTimeOriginal)
 }

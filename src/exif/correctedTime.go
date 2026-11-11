@@ -13,15 +13,6 @@ import (
 // EXIF written into the same file. ok is false when the server has no usable
 // date and the caller should keep the original filename.
 func CorrectedLocalTime(info *model.ExifInfo) (time.Time, bool) {
-	if info == nil || info.DateTimeOriginal == nil || *info.DateTimeOriginal == "" {
-		return time.Time{}, false
-	}
-	t, err := ParseDateTime(*info.DateTimeOriginal)
-	if err != nil {
-		return time.Time{}, false
-	}
-	if loc := resolveImmichLocation(info.TimeZone); loc != nil {
-		t = t.In(loc)
-	}
-	return t, true
+	date, ok := immichDateOf(info)
+	return date.local, ok
 }
