@@ -2,12 +2,10 @@ package process
 
 import (
 	"bytes"
-	"crypto/sha1"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -79,7 +77,7 @@ func bakeEdits(client *api.ImmichClient, asset model.AssetResponse, plan bakePla
 	if err != nil {
 		return bakedFile{}, fmt.Errorf("create render dir: %w", err)
 	}
-	originalSum, err := fileSHA1(originalPath)
+	originalSum, err := fileChecksumSHA1(originalPath)
 	if err != nil {
 		return bakedFile{}, fmt.Errorf("hash original: %w", err)
 	}
@@ -284,17 +282,4 @@ func editsReadError(err error) error {
 		return fmt.Errorf("reading Immich edits was denied, the API key needs the asset.edit.get permission: %w", err)
 	}
 	return fmt.Errorf("fetch edits: %w", err)
-}
-
-func fileSHA1(path string) ([]byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	hasher := sha1.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return nil, err
-	}
-	return hasher.Sum(nil), nil
 }

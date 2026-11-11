@@ -4,19 +4,16 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/majorfi/immich-exif/api"
-	"github.com/majorfi/immich-exif/exif"
 	"github.com/majorfi/immich-exif/model"
 )
 
-var refreshWaitAttempts = 60
+var refreshWaitAttempts = 30
 
 const refreshRepeatEvery = 10
 
@@ -24,24 +21,6 @@ type inPlaceTarget struct {
 	root  string
 	local string
 	info  os.FileInfo
-	sum   []byte
-}
-
-func mapServerPath(cfg *model.Config, serverPath string) (string, string, bool) {
-	serverPath = path.Clean(serverPath)
-	var best model.PathMapping
-	found := false
-	for _, mapping := range cfg.InPlaceMaps {
-		prefix := strings.TrimSuffix(mapping.Server, "/") + "/"
-		if (serverPath == mapping.Server || strings.HasPrefix(serverPath, prefix)) && len(mapping.Server) > len(best.Server) {
-			best, found = mapping, true
-		}
-	}
-	if !found {
-		return "", "", false
-	}
-	relative := strings.TrimPrefix(strings.TrimPrefix(serverPath, best.Server), "/")
-	return filepath.Join(best.Local, filepath.FromSlash(relative)), best.Local, true
 }
 
 // resolveInPlace returns the local file an external asset is updated through,
@@ -49,7 +28,7 @@ func mapServerPath(cfg *model.Config, serverPath string) (string, string, bool) 
 // covers the asset. Only a path-hashed checksum is safe: Immich never
 // recomputes a content checksum, so rewriting such a file would leave it stale.
 func resolveInPlace(cfg *model.Config, asset model.AssetResponse) (inPlaceTarget, string) {
-	local, root, ok := mapServerPath(cfg, asset.OriginalPath)
+	local, root, ok := cfg.MapServerPath(asset.OriginalPath)
 	if !ok {
 		return inPlaceTarget{}, ""
 	}
@@ -102,15 +81,15 @@ func checkLocalFile(root, local string) string {
 // byte, so a wrong mapping can never rewrite an unrelated file, and records
 // its state for the pre-commit race check.
 func prepareInPlace(client *api.ImmichClient, cfg *model.Config, asset model.AssetResponse, target inPlaceTarget, downloaded string) (inPlaceTarget, string, error) {
-	served, err := fileSHA1(downloaded)
+	served, err := fileChecksumSHA1(downloaded)
 	if err != nil {
 		return target, "", err
 	}
-	target.sum, err = fileSHA1(target.local)
+	local, err := fileChecksumSHA1(target.local)
 	if err != nil {
 		return target, "", err
 	}
-	if !bytes.Equal(served, target.sum) {
+	if !bytes.Equal(served, local) {
 		return target, fmt.Sprintf("%s differs from the file Immich serves; check -in-place-map", target.local), nil
 	}
 	target.info, err = os.Lstat(target.local)
@@ -121,72 +100,15 @@ func prepareInPlace(client *api.ImmichClient, cfg *model.Config, asset model.Ass
 	return target, note, err
 }
 
-// sidecarNote reports a sidecar Immich would apply over the rewritten file
-// with a value that disagrees with its database. Immich writes its own
-// sidecar next to edited external files; that one agrees and is harmless.
-// City, state and country are left out: Immich derives them from GPS.
-func sidecarNote(client *api.ImmichClient, cfg *model.Config, asset model.AssetResponse, local string) (string, error) {
-	registered, err := client.GetSidecarPaths(asset.ID)
-	if code, ok := statusCodeOf(err); ok && code == http.StatusNotFound {
-		return "listing an asset's sidecars needs Immich 3.2 or later", nil
-	}
-	if isPermissionDenied(err) {
-		return "", fmt.Errorf("listing sidecars was denied, -in-place-map needs the API key's asset.file.read permission: %w", err)
-	}
-	if err != nil {
-		return "", fmt.Errorf("list sidecars: %w", err)
-	}
-	candidates := []string{local + ".xmp", strings.TrimSuffix(local, filepath.Ext(local)) + ".xmp"}
-	for _, serverPath := range registered {
-		mapped, _, ok := mapServerPath(cfg, serverPath)
-		if !ok {
-			return fmt.Sprintf("its sidecar %s is outside the mapped paths", serverPath), nil
-		}
-		candidates = append(candidates, mapped)
-	}
-	seen := map[string]bool{}
-	for _, candidate := range candidates {
-		if seen[candidate] {
-			continue
-		}
-		seen[candidate] = true
-		if _, err := os.Lstat(candidate); errors.Is(err, os.ErrNotExist) {
-			continue
-		} else if err != nil {
-			return "", err
-		}
-		tags, err := exif.ReadExifTagsFn(candidate)
-		if err != nil {
-			return "", fmt.Errorf("read sidecar %s: %w", candidate, err)
-		}
-		if cfg.Faces && tags["XMP-mwg-rs:RegionInfo"] != nil {
-			return fmt.Sprintf("sidecar %s holds face regions that Immich would apply over the file's", filepath.Base(candidate)), nil
-		}
-		for _, change := range exif.CompareAssetMetadata(asset, tags) {
-			for _, diff := range change.Diffs {
-				if diff.Symbol == model.DiffChange && !isLocationTag(diff.Tag) {
-					return fmt.Sprintf("sidecar %s disagrees with Immich on %s (%s, Immich has %s) and Immich would apply it over the file", filepath.Base(candidate), diff.Tag, diff.Old, diff.New), nil
-				}
-			}
-		}
-	}
-	return "", nil
-}
-
-func isLocationTag(tag string) bool {
-	for _, word := range []string{"City", "State", "Province", "Country"} {
-		if strings.Contains(tag, word) {
-			return true
-		}
-	}
-	return false
-}
-
 // commitInPlace swaps the rewritten copy over the library file once nothing
 // changed since it was read, then asks Immich to re-read it. Nothing after the
-// rename is retried: the file is already updated at that point.
-func commitInPlace(client *api.ImmichClient, cfg *model.Config, asset *model.AssetResponse, rewritten string, target inPlaceTarget, emitter model.EventEmitter) model.ProcessResult {
+// rename is retried: the file is already updated at that point. A write by
+// another program between the last check and the rename is not detected.
+func commitInPlace(client *api.ImmichClient, cfg *model.Config, asset *model.AssetResponse, rewritten string, target inPlaceTarget, emitter model.EventEmitter, cancelled func() bool) model.ProcessResult {
 	result := func(status model.ResultStatus, message string) model.ProcessResult {
+		if status == model.StatusFailed {
+			message = fmt.Sprintf("[%s] %s", model.ShortID(asset.ID), message)
+		}
 		return model.ProcessResult{AssetID: asset.ID, Status: status, Message: message}
 	}
 	note, err := sidecarNote(client, cfg, *asset, target.local)
@@ -204,11 +126,17 @@ func commitInPlace(client *api.ImmichClient, cfg *model.Config, asset *model.Ass
 	}
 
 	emitter.EmitProgress(model.ProgressEvent{AssetID: asset.ID, Filename: asset.OriginalFileName, Step: "Updating " + target.local + " in place..."})
-	if err := replaceFile(target.local, rewritten, target.info.Mode().Perm()); err != nil {
+	if err := replaceFile(target.local, rewritten, target.info); errors.Is(err, errNotDurable) {
+		return result(model.StatusFailed, fmt.Sprintf("file updated in place, but %v", err))
+	} else if err != nil {
 		return result(model.StatusFailed, fmt.Sprintf("write in place: %v (the library file was not changed)", err))
 	}
-	if err := waitForRefresh(client, *asset); err != nil {
+	reread, err := waitForRefresh(client, *asset, cancelled)
+	if err != nil {
 		return result(model.StatusFailed, fmt.Sprintf("file updated in place, but %v", err))
+	}
+	if !reread {
+		return result(model.StatusSuccess, "updated in place; Immich re-reads it at its next library scan")
 	}
 	return result(model.StatusSuccess, "updated in place")
 }
@@ -221,38 +149,36 @@ func changedSince(target inPlaceTarget) string {
 	if !os.SameFile(info, target.info) || info.Size() != target.info.Size() || !info.ModTime().Equal(target.info.ModTime()) {
 		return fmt.Sprintf("%s changed on disk while processing; re-run to pick it up", target.local)
 	}
-	sum, err := fileSHA1(target.local)
-	if err != nil || !bytes.Equal(sum, target.sum) {
-		return fmt.Sprintf("%s changed on disk while processing; re-run to pick it up", target.local)
-	}
 	return ""
 }
 
 // waitForRefresh asks Immich to re-read the file until it reports the new
 // modification time. A network or Docker file share can still serve Immich the
 // old attributes for a few seconds, and a refresh run in that window reads the
-// old file, so the request is repeated rather than trusted once.
-func waitForRefresh(client *api.ImmichClient, asset model.AssetResponse) error {
-	for attempt := 0; ; attempt++ {
+// old file, so the request is repeated rather than trusted once. Giving up is
+// not a failure: the file's new mtime makes the next library scan re-read it.
+func waitForRefresh(client *api.ImmichClient, asset model.AssetResponse, cancelled func() bool) (bool, error) {
+	for attempt := 0; attempt < refreshWaitAttempts; attempt++ {
+		if cancelled != nil && cancelled() {
+			return false, nil
+		}
 		if attempt%refreshRepeatEvery == 0 {
 			if err := client.RefreshMetadata(asset.ID); err != nil {
 				hint := ""
 				if isPermissionDenied(err) {
 					hint = " (the API key needs job.create and asset.update)"
 				}
-				return fmt.Errorf("asking Immich to re-read it failed%s: %w; run Refresh metadata on the asset", hint, err)
+				return false, fmt.Errorf("asking Immich to re-read it failed%s: %w; run Refresh metadata on the asset", hint, err)
 			}
 		}
 		sleepFn(time.Second)
 		fresh, err := client.GetAsset(asset.ID)
 		if err != nil {
-			return fmt.Errorf("checking that Immich re-read it failed: %w", err)
+			return false, fmt.Errorf("checking that Immich re-read it failed: %w", err)
 		}
 		if !fresh.FileModifiedAt.Equal(asset.FileModifiedAt) {
-			return nil
-		}
-		if attempt+1 >= refreshWaitAttempts {
-			return fmt.Errorf("Immich has not re-read it after %d checks; it will on its next metadata refresh or library scan", attempt+1)
+			return true, nil
 		}
 	}
+	return false, nil
 }

@@ -1,14 +1,18 @@
 package process
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 )
 
-func replaceFile(destination, source string, mode os.FileMode) error {
+var errNotDurable = errors.New("the rename may not survive a power loss")
+
+func replaceFile(destination, source string, original os.FileInfo) error {
 	dir := filepath.Dir(destination)
-	staged, err := os.CreateTemp(dir, "."+filepath.Base(destination)+".immich-exif-*")
+	staged, err := os.CreateTemp(dir, ".immich-exif-*")
 	if err != nil {
 		return err
 	}
@@ -26,7 +30,7 @@ func replaceFile(destination, source string, mode os.FileMode) error {
 	_, err = io.Copy(staged, input)
 	input.Close()
 	if err == nil {
-		err = staged.Chmod(mode)
+		err = preserveAttributes(destination, original, staged)
 	}
 	if err == nil {
 		err = staged.Sync()
@@ -41,9 +45,13 @@ func replaceFile(destination, source string, mode os.FileMode) error {
 		return err
 	}
 	committed = true
-	if handle, err := os.Open(dir); err == nil {
-		_ = handle.Sync()
+	handle, err := os.Open(dir)
+	if err == nil {
+		err = handle.Sync()
 		handle.Close()
+	}
+	if err != nil {
+		return fmt.Errorf("%w: syncing %s failed: %v", errNotDurable, dir, err)
 	}
 	return nil
 }

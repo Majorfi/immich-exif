@@ -247,7 +247,7 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	}
 
 	if inPlace.local != "" {
-		return commitInPlace(client, cfg, asset, filePath, inPlace, emitter)
+		return commitInPlace(client, cfg, asset, filePath, inPlace, emitter, cancelled)
 	}
 	return uploadReplacement(uploader, filePath, asset, emitter, cancelled)
 }

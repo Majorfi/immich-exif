@@ -78,13 +78,13 @@ func (c *ImmichClient) forEachSearchPage(albumIDs []string, withExif, withPeople
 }
 
 // ListAllAssetIDs pages every asset and returns the IDs worth processing.
-// skipExternalLibrary must be true when the run replaces assets: uploading an
-// external-library asset would migrate it into the internal library, so those
-// are only eligible for the read-only modes (dry-run, export). withFaces
+// skipExternal decides which external-library assets to leave out: a replace
+// run would migrate them into the internal library, so only the read-only
+// modes and in-place mapped paths keep them. withFaces
 // makes the search return people so an asset whose only writable metadata is
 // its named faces survives the pre-filter. withEdits keeps edited assets so
 // -apply-edits can bake them even when their metadata already matches.
-func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool, skipExternalLibrary, withFaces, withEdits bool) ([]string, AssetSelectionStats, error) {
+func (c *ImmichClient) ListAllAssetIDs(shouldSkip, skipExternal func(model.AssetResponse) bool, withFaces, withEdits bool) ([]string, AssetSelectionStats, error) {
 	var allIDs []string
 	stats := AssetSelectionStats{}
 	seen := map[string]bool{}
@@ -95,7 +95,7 @@ func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool
 				continue
 			}
 			seen[asset.ID] = true
-			if skipExternalLibrary && asset.LibraryID != "" {
+			if skipExternal != nil && asset.LibraryID != "" && skipExternal(asset) {
 				stats.ExternalLibrarySkipped++
 				continue
 			}

@@ -203,13 +203,13 @@ func TestCheckLocalFileRefusesSymlinksAndHardLinks(t *testing.T) {
 
 func TestMapServerPathPicksTheLongestPrefixOnComponentBoundaries(t *testing.T) {
 	cfg := &model.Config{InPlaceMaps: []model.PathMapping{{Server: "/mnt", Local: "/a"}, {Server: "/mnt/photos", Local: "/b"}}}
-	if local, _, ok := mapServerPath(cfg, "/mnt/photos/x/y.jpg"); !ok || local != "/b/x/y.jpg" {
+	if local, _, ok := cfg.MapServerPath("/mnt/photos/x/y.jpg"); !ok || local != "/b/x/y.jpg" {
 		t.Fatalf("longest prefix not used: %q %v", local, ok)
 	}
-	if local, _, ok := mapServerPath(cfg, "/mnt/photosextra/y.jpg"); !ok || local != "/a/photosextra/y.jpg" {
+	if local, _, ok := cfg.MapServerPath("/mnt/photosextra/y.jpg"); !ok || local != "/a/photosextra/y.jpg" {
 		t.Fatalf("prefix must stop at a path component: %q %v", local, ok)
 	}
-	if _, _, ok := mapServerPath(cfg, "/data/y.jpg"); ok {
+	if _, _, ok := cfg.MapServerPath("/data/y.jpg"); ok {
 		t.Fatal("an unmapped path must not resolve")
 	}
 }
@@ -223,5 +223,37 @@ func TestInPlaceAsksAgainWhenImmichReadAStaleView(t *testing.T) {
 	}
 	if state.refreshRequests < 2 {
 		t.Fatalf("expected the refresh to be requested again, got %d requests", state.refreshRequests)
+	}
+}
+
+func TestSidecarDisagreementCatchesValuesImmichCleared(t *testing.T) {
+	cfg := &model.Config{}
+	asset := model.AssetResponse{ExifInfo: &model.ExifInfo{}}
+	for name, tags := range map[string]exif.ExifTagMap{
+		"description": {"Description": "old caption"},
+		"gps":         {"GPSLatitude": -33.8},
+		"rating":      {"Rating": float64(3)},
+	} {
+		if note := sidecarDisagreement(cfg, asset, tags); note == "" {
+			t.Fatalf("%s: a sidecar value Immich no longer has must block", name)
+		}
+	}
+	if note := sidecarDisagreement(cfg, asset, exif.ExifTagMap{"Rating": float64(0)}); note != "" {
+		t.Fatalf("Immich writes rating 0 for unrated assets, which must pass: %s", note)
+	}
+}
+
+func TestInPlaceReportsSuccessWhenImmichIsSlowToReread(t *testing.T) {
+	root, local := inPlaceLibrary(t, "original bytes")
+	orig := refreshWaitAttempts
+	refreshWaitAttempts = 3
+	t.Cleanup(func() { refreshWaitAttempts = orig })
+	state := &inPlaceServer{served: "original bytes", ignoreRefreshes: 100}
+	result := runInPlace(t, state, root, appendTags)
+	if result.Status != model.StatusSuccess || !strings.Contains(result.Message, "next library scan") {
+		t.Fatalf("a written file must not be reported as failed, got %+v", result)
+	}
+	if data, _ := os.ReadFile(local); string(data) != "original bytes+tags" {
+		t.Fatalf("file not rewritten: %q", data)
 	}
 }

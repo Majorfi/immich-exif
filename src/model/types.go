@@ -1,6 +1,11 @@
 package model
 
-import "time"
+import (
+	"path"
+	"path/filepath"
+	"strings"
+	"time"
+)
 
 type AssetResponse struct {
 	ID               string           `json:"id"`
@@ -121,6 +126,23 @@ type UploadResponse struct {
 type PathMapping struct {
 	Server string
 	Local  string
+}
+
+func (c *Config) MapServerPath(serverPath string) (string, string, bool) {
+	serverPath = path.Clean(serverPath)
+	var best PathMapping
+	found := false
+	for _, mapping := range c.InPlaceMaps {
+		prefix := strings.TrimSuffix(mapping.Server, "/") + "/"
+		if (serverPath == mapping.Server || strings.HasPrefix(serverPath, prefix)) && len(mapping.Server) > len(best.Server) {
+			best, found = mapping, true
+		}
+	}
+	if !found {
+		return "", "", false
+	}
+	relative := strings.TrimPrefix(strings.TrimPrefix(serverPath, best.Server), "/")
+	return filepath.Join(best.Local, filepath.FromSlash(relative)), best.Local, true
 }
 
 func (c *Config) BakesEdits(asset AssetResponse) bool {
