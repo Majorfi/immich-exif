@@ -53,8 +53,8 @@ func (c *ImmichClient) ReplaceAssetEdits(assetID string, edits []model.AssetEdit
 // DownloadEditedAsset saves the server's edited render into destDir under the
 // name the server gives it (the render's extension can differ from the
 // original's) and returns the path. Immich silently serves the original when
-// no render exists yet, so bytes matching the original checksum are refused.
-func (c *ImmichClient) DownloadEditedAsset(assetID, destDir, originalChecksum string, onProgress func(percent int)) (string, error) {
+// no render exists yet, so bytes matching the original's SHA-1 are refused.
+func (c *ImmichClient) DownloadEditedAsset(assetID, destDir string, originalSum []byte, onProgress func(percent int)) (string, error) {
 	var destPath string
 	destFor := func(resp *http.Response) (string, error) {
 		name, err := attachmentName(resp)
@@ -69,12 +69,7 @@ func (c *ImmichClient) DownloadEditedAsset(assetID, destDir, originalChecksum st
 		return "", err
 	}
 
-	original, err := model.DecodeSHA1Checksum(originalChecksum)
-	if err != nil {
-		_ = os.Remove(destPath)
-		return "", fmt.Errorf("decode source checksum %q: %w", originalChecksum, err)
-	}
-	if bytes.Equal(sum, original) {
+	if bytes.Equal(sum, originalSum) {
 		_ = os.Remove(destPath)
 		return "", ErrEditedRenderMissing
 	}

@@ -234,32 +234,3 @@ func DeriveOffsetValuesForMissingOffset(existing ExifTagMap, expected string) (s
 	offsetStr, tzHours, hasWholeHour := BuildOffsetValues(offsetSeconds)
 	return offsetStr, tzHours, hasWholeHour, true
 }
-
-func DateTimeMatch(existingVal, existingOffset, existingTZOffset any, expected string) bool {
-	if existingVal == nil {
-		return false
-	}
-	exifStr, ok := existingVal.(string)
-	if !ok {
-		return false
-	}
-
-	expectedTime, err := ParseDateTime(expected)
-	if err != nil {
-		return strings.TrimSpace(exifStr) == strings.TrimSpace(expected)
-	}
-
-	if offsetStr, ok := existingOffset.(string); ok {
-		exifStr = exifStr + strings.TrimSpace(offsetStr)
-	} else if tzOffset, ok := existingTZOffset.(float64); ok {
-		hours := int(tzOffset)
-		exifStr = exifStr + fmt.Sprintf("%+03d:00", hours)
-	}
-
-	existingTime, err := ParseDateTime(exifStr)
-	if err != nil {
-		return false
-	}
-
-	return existingTime.Truncate(time.Second).Equal(expectedTime.Truncate(time.Second))
-}

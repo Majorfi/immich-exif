@@ -1,6 +1,7 @@
 package model
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/hex"
@@ -19,4 +20,13 @@ func DecodeSHA1Checksum(checksum string) ([]byte, error) {
 		return b, nil
 	}
 	return nil, fmt.Errorf("unrecognized checksum format")
+}
+
+func IsPathChecksum(asset AssetResponse) bool {
+	stored, err := DecodeSHA1Checksum(asset.Checksum)
+	if err != nil || asset.OriginalPath == "" {
+		return false
+	}
+	pathSum := sha1.Sum([]byte("path:" + asset.OriginalPath))
+	return bytes.Equal(stored, pathSum[:])
 }

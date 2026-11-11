@@ -5,6 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -36,6 +39,7 @@ func parseConfig() (*model.Config, error) {
 
 	cfg := &model.Config{}
 	var albums stringSlice
+	var inPlaceMaps stringSlice
 	var noVerifyUpload bool
 	var allowHTTP bool
 	var showVersion bool
@@ -62,6 +66,7 @@ func parseConfig() (*model.Config, error) {
 	flag.StringVar(&cfg.RenamePattern, "rename-pattern", renamePatternDefault(), "strftime-style pattern for -rename: %Y %y %m %d %H %M %S (env: RENAME_PATTERN)")
 	flag.BoolVar(&cfg.Force, "force", false, "Force re-processing all assets (ignore state cache)")
 	flag.Var(&albums, "album", "Album ID to process (repeatable), or all")
+	flag.Var(&inPlaceMaps, "in-place-map", "Update external-library files in place: SERVER_PATH=LOCAL_DIR, the library path as Immich sees it and where this machine mounts it (repeatable)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: immich-exif [flags] [asset-ids...]\n\n")
@@ -146,6 +151,20 @@ func parseConfig() (*model.Config, error) {
 		return nil, fmt.Errorf("--force can only be used with --all or --album all")
 	}
 
+	for _, raw := range inPlaceMaps {
+		mapping, err := parseInPlaceMap(raw)
+		if err != nil {
+			return nil, err
+		}
+		cfg.InPlaceMaps = append(cfg.InPlaceMaps, mapping)
+	}
+	if len(cfg.InPlaceMaps) > 0 && cfg.ExportDir != "" {
+		return nil, fmt.Errorf("--in-place-map rewrites library files and --export-dir writes copies; use one or the other")
+	}
+	if len(cfg.InPlaceMaps) > 0 && cfg.ApplyEdits {
+		return nil, fmt.Errorf("--in-place-map cannot be combined with --apply-edits: baking in place would destroy the original pixels with no trash to recover them")
+	}
+
 	if cfg.Rename && cfg.ExportDir == "" {
 		return nil, fmt.Errorf("--rename only applies to --export-dir runs")
 	}
@@ -198,4 +217,30 @@ func hasAllAlbumSelector(albumIDs []string) bool {
 		}
 	}
 	return false
+}
+
+func parseInPlaceMap(raw string) (model.PathMapping, error) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		return model.PathMapping{}, fmt.Errorf("--in-place-map is only supported on Linux and macOS")
+	}
+	server, local, ok := strings.Cut(raw, "=")
+	if !ok || server == "" || local == "" {
+		return model.PathMapping{}, fmt.Errorf("--in-place-map %q: expected SERVER_PATH=LOCAL_DIR", raw)
+	}
+	server = path.Clean(server)
+	if !path.IsAbs(server) {
+		return model.PathMapping{}, fmt.Errorf("--in-place-map %q: the server path must be absolute", raw)
+	}
+	absolute, err := filepath.Abs(local)
+	if err != nil {
+		return model.PathMapping{}, fmt.Errorf("--in-place-map %q: %w", raw, err)
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return model.PathMapping{}, fmt.Errorf("--in-place-map %q: %w", raw, err)
+	}
+	if info, err := os.Stat(resolved); err != nil || !info.IsDir() {
+		return model.PathMapping{}, fmt.Errorf("--in-place-map %q: %s is not a directory", raw, resolved)
+	}
+	return model.PathMapping{Server: server, Local: resolved}, nil
 }

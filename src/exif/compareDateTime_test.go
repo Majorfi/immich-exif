@@ -1,0 +1,102 @@
+package exif
+
+import (
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/majorfi/immich-exif/model"
+)
+
+func TestCompareDateTimeUsesImmichZoneWhenTheWallClockDiffers(t *testing.T) {
+	dt, zone := "2021-05-06T09:08:09+00:00", "Pacific/Rarotonga"
+	existing := ExifTagMap{"DateTimeOriginal": "2021:05:06 07:08:09"}
+	args := CollectExifArgs(CompareMetadata(&model.ExifInfo{DateTimeOriginal: &dt, TimeZone: &zone}, existing))
+	for _, want := range []string{"-DateTimeOriginal=2021:05:05 23:08:09", "-OffsetTimeOriginal=-10:00", "-TimeZoneOffset=-10"} {
+		if !slices.Contains(args, want) {
+			t.Fatalf("a date edited in Immich must be rewritten in Immich's zone: want %s in %v", want, args)
+		}
+	}
+}
+
+func TestCompareDateTimeOnlyAddsTheOffsetWhenTheWallClockMatches(t *testing.T) {
+	dt, zone := "2021-05-06T09:08:09+00:00", "UTC+10"
+	existing := ExifTagMap{"DateTimeOriginal": "2021:05:06 19:08:09"}
+	args := CollectExifArgs(CompareMetadata(&model.ExifInfo{DateTimeOriginal: &dt, TimeZone: &zone}, existing))
+	if !slices.Contains(args, "-OffsetTimeOriginal=+10:00") || !slices.Contains(args, "-TimeZoneOffset=10") {
+		t.Fatalf("expected Immich's offset added, got %v", args)
+	}
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-DateTimeOriginal=") {
+			t.Fatalf("a matching wall clock must not be rewritten, got %v", args)
+		}
+	}
+}
+
+func TestCompareDateTimeRepairsAnInventedOffset(t *testing.T) {
+	dt, zone := "2021-05-06T09:08:09+00:00", "Pacific/Rarotonga"
+	existing := ExifTagMap{"DateTimeOriginal": "2021:05:06 07:08:09", "OffsetTimeOriginal": "-02:00", "TimeZoneOffset": float64(-2)}
+	args := CollectExifArgs(CompareMetadata(&model.ExifInfo{DateTimeOriginal: &dt, TimeZone: &zone}, existing))
+	for _, want := range []string{"-DateTimeOriginal=2021:05:05 23:08:09", "-OffsetTimeOriginal=-10:00", "-TimeZoneOffset=-10"} {
+		if !slices.Contains(args, want) {
+			t.Fatalf("an offset that is not Immich's must be repaired: want %s in %v", want, args)
+		}
+	}
+}
+
+func TestCompareDateTimeKeepsAFileAnchoredOnImmichZone(t *testing.T) {
+	dt, zone := "2021-05-06T09:08:09+00:00", "Pacific/Rarotonga"
+	existing := ExifTagMap{
+		"DateTimeOriginal":          "2021:05:05 23:08:09",
+		"OffsetTimeOriginal":        "-10:00",
+		"TimeZoneOffset":            float64(-10),
+		"XMP-exif:DateTimeOriginal": "2021:05:05 23:08:09.000-10:00",
+		"XMP-xmp:CreateDate":        "2021:05:05 23:08:09.000-10:00",
+	}
+	if args := CollectExifArgs(CompareMetadata(&model.ExifInfo{DateTimeOriginal: &dt, TimeZone: &zone}, existing)); len(args) != 0 {
+		t.Fatalf("a file already in Immich's zone must not be rewritten, got %v", args)
+	}
+}
+
+func TestCompareDateTimeTreatsAnInlineOffsetAsAnOffset(t *testing.T) {
+	dt := "2021-05-06T09:08:09+00:00"
+	existing := ExifTagMap{
+		"DateTimeOriginal":          "2021:05:06 19:08:09+10:00",
+		"XMP-exif:DateTimeOriginal": "2021:05:06 19:08:09+10:00",
+		"XMP-xmp:CreateDate":        "2021:05:06 19:08:09+10:00",
+	}
+	if args := CollectExifArgs(CompareMetadata(&model.ExifInfo{DateTimeOriginal: &dt}, existing)); len(args) != 0 {
+		t.Fatalf("without a zone, a date carrying its own offset at the right instant must be kept, got %v", args)
+	}
+	zone := "UTC+10"
+	if args := CollectExifArgs(CompareMetadata(&model.ExifInfo{DateTimeOriginal: &dt, TimeZone: &zone}, existing)); len(args) != 0 {
+		t.Fatalf("a date whose inline offset is Immich's zone must be kept, got %v", args)
+	}
+}
+
+func TestCompareDateTimeReadsAZuluOffsetTag(t *testing.T) {
+	dt, zone := "2021-05-06T09:08:09+00:00", "UTC"
+	existing := ExifTagMap{
+		"DateTimeOriginal":          "2021:05:06 09:08:09",
+		"OffsetTimeOriginal":        "Z",
+		"TimeZoneOffset":            float64(0),
+		"XMP-exif:DateTimeOriginal": "2021:05:06 09:08:09Z",
+		"XMP-xmp:CreateDate":        "2021:05:06 09:08:09Z",
+	}
+	if args := CollectExifArgs(CompareMetadata(&model.ExifInfo{DateTimeOriginal: &dt, TimeZone: &zone}, existing)); len(args) != 0 {
+		t.Fatalf("Z is UTC's offset and must match, got %v", args)
+	}
+}
+
+func TestCompareDateTimeRewritesAConflictingSeparateOffset(t *testing.T) {
+	dt, zone := "2025-12-10T15:56:36Z", "UTC+1"
+	for name, existing := range map[string]ExifTagMap{
+		"TimeZoneOffset":     {"DateTimeOriginal": "2025:12:10 16:56:36+01:00", "TimeZoneOffset": float64(5)},
+		"OffsetTimeOriginal": {"DateTimeOriginal": "2025:12:10 16:56:36+01:00", "OffsetTimeOriginal": "+05:00"},
+	} {
+		args := CollectExifArgs(CompareMetadata(&model.ExifInfo{DateTimeOriginal: &dt, TimeZone: &zone}, existing))
+		if !slices.Contains(args, "-OffsetTimeOriginal=+01:00") {
+			t.Fatalf("%s: a separate offset contradicting the date must be rewritten to Immich's, got %v", name, args)
+		}
+	}
+}

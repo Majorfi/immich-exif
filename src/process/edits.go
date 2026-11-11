@@ -77,7 +77,14 @@ func bakeEdits(client *api.ImmichClient, asset model.AssetResponse, plan bakePla
 	if err != nil {
 		return bakedFile{}, fmt.Errorf("create render dir: %w", err)
 	}
-	renderPath, err := client.DownloadEditedAsset(asset.ID, renderDir, asset.Checksum, onProgress)
+	originalSum, err := model.DecodeSHA1Checksum(asset.Checksum)
+	if err != nil || model.IsPathChecksum(asset) {
+		originalSum, err = fileChecksumSHA1(originalPath)
+	}
+	if err != nil {
+		return bakedFile{}, fmt.Errorf("hash original: %w", err)
+	}
+	renderPath, err := client.DownloadEditedAsset(asset.ID, renderDir, originalSum, onProgress)
 	if errors.Is(err, api.ErrEditedRenderMissing) {
 		return bakedFile{skipNote: "Immich has not rendered the edits yet; re-run once its editor job finishes"}, nil
 	}

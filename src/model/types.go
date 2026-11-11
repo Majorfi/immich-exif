@@ -1,12 +1,18 @@
 package model
 
-import "time"
+import (
+	"path"
+	"path/filepath"
+	"strings"
+	"time"
+)
 
 type AssetResponse struct {
 	ID               string           `json:"id"`
 	DeviceAssetID    string           `json:"deviceAssetId"`
 	DeviceID         string           `json:"deviceId"`
 	OriginalFileName string           `json:"originalFileName"`
+	OriginalPath     string           `json:"originalPath"`
 	OriginalMimeType string           `json:"originalMimeType"`
 	Checksum         string           `json:"checksum"`
 	FileCreatedAt    time.Time        `json:"fileCreatedAt"`
@@ -117,6 +123,28 @@ type UploadResponse struct {
 	Status string `json:"status"`
 }
 
+type PathMapping struct {
+	Server string
+	Local  string
+}
+
+func (c *Config) MapServerPath(serverPath string) (string, string, bool) {
+	serverPath = path.Clean(serverPath)
+	var best PathMapping
+	found := false
+	for _, mapping := range c.InPlaceMaps {
+		prefix := strings.TrimSuffix(mapping.Server, "/") + "/"
+		if (serverPath == mapping.Server || strings.HasPrefix(serverPath, prefix)) && len(mapping.Server) > len(best.Server) {
+			best, found = mapping, true
+		}
+	}
+	if !found {
+		return "", "", false
+	}
+	relative := strings.TrimPrefix(strings.TrimPrefix(serverPath, best.Server), "/")
+	return filepath.Join(best.Local, filepath.FromSlash(relative)), best.Local, true
+}
+
 func (c *Config) BakesEdits(asset AssetResponse) bool {
 	return c.ApplyEdits && asset.IsEdited
 }
@@ -170,6 +198,7 @@ type Config struct {
 	VerifyUpload bool
 	Faces        bool
 	ApplyEdits   bool
+	InPlaceMaps  []PathMapping
 
 	Rename        bool
 	RenamePattern string

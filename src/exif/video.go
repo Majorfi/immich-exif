@@ -2,7 +2,6 @@ package exif
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/majorfi/immich-exif/model"
 )
@@ -105,36 +104,19 @@ func compareVideoDateTime(exif *model.ExifInfo, existing ExifTagMap) *TagChange 
 	}
 
 	expected := *exif.DateTimeOriginal
-	anchored := false
-	if t, ok := CorrectedLocalTime(exif); ok && resolveImmichLocation(exif.TimeZone) != nil {
-		expected, anchored = t.Format("2006-01-02T15:04:05.999-07:00"), true
+	date, ok := immichDateOf(exif)
+	if ok && date.anchored {
+		expected = date.local.Format("2006-01-02T15:04:05.999-07:00")
 	}
 
 	change := &TagChange{}
-	for _, tag := range []string{"DateTimeOriginal", "XMP-exif:DateTimeOriginal", "XMP-xmp:CreateDate"} {
-		value, _ := existing[tag].(string)
-		if DateTimeStringMatch(existing[tag], expected) && (!anchored || sameOffset(value, expected)) {
-			continue
-		}
-		change.Args = append(change.Args, fmt.Sprintf("-%s=%s", tag, expected))
-		change.Diffs = appendStringDiff(change.Diffs, tag, existing[tag], expected)
+	var anchor *immichDate
+	if ok {
+		anchor = &date
 	}
+	appendDateArgs(change, []string{"DateTimeOriginal", "XMP-exif:DateTimeOriginal", "XMP-xmp:CreateDate"}, expected, existing, anchor)
 	if len(change.Args) == 0 {
 		return nil
 	}
 	return change
-}
-
-func sameOffset(existing, expected string) bool {
-	existingTime, err := ParseDateTime(strings.TrimSpace(existing))
-	if err != nil {
-		return false
-	}
-	expectedTime, err := ParseDateTime(expected)
-	if err != nil {
-		return false
-	}
-	_, existingOffset := existingTime.Zone()
-	_, expectedOffset := expectedTime.Zone()
-	return existingOffset == expectedOffset
 }

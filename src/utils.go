@@ -297,3 +297,13 @@ func buildResolveDuplicateFollowUpConfig(cfg *model.Config) *model.Config {
 	resolveCfg.Yes = true
 	return &resolveCfg
 }
+
+func externalSkipper(cfg *model.Config) func(model.AssetResponse) bool {
+	if !cfg.WillReplace() {
+		return nil
+	}
+	return func(asset model.AssetResponse) bool {
+		_, _, mapped := cfg.MapServerPath(asset.OriginalPath)
+		return !mapped
+	}
+}

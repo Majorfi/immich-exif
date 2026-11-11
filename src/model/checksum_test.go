@@ -39,3 +39,17 @@ func TestDecodeSHA1Checksum(t *testing.T) {
 		})
 	}
 }
+
+func TestIsPathChecksumRecognizesExternalLibraryHash(t *testing.T) {
+	asset := AssetResponse{OriginalPath: "/mnt/external/ext1.jpg", Checksum: "zRGfxxWk2xWu6fDXr8dMonW6tuY="}
+	if !IsPathChecksum(asset) {
+		t.Fatal("the hash of path:<originalPath> must be recognized (value captured from Immich 3.3.6)")
+	}
+	asset.OriginalPath = "/mnt/external/other.jpg"
+	if IsPathChecksum(asset) {
+		t.Fatal("a checksum of another path must not match")
+	}
+	if IsPathChecksum(AssetResponse{Checksum: "zRGfxxWk2xWu6fDXr8dMonW6tuY="}) {
+		t.Fatal("without a path the checksum cannot be a path hash")
+	}
+}
