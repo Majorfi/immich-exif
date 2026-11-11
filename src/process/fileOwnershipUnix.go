@@ -44,6 +44,15 @@ func preserveAttributes(original string, info os.FileInfo, staged *os.File) erro
 	if err != nil {
 		return fmt.Errorf("list extended attributes: %w", err)
 	}
+	stagedNames, err := xattrNames(staged.Name())
+	if err != nil {
+		return fmt.Errorf("list the new file's extended attributes: %w", err)
+	}
+	for _, name := range stagedNames {
+		if strings.HasPrefix(name, "security.") && !sameXattr(original, staged.Name(), name) {
+			return fmt.Errorf("the new file would get a different %s label, which only the system can set", name)
+		}
+	}
 	for _, name := range names {
 		if strings.HasPrefix(name, "security.") {
 			if !sameXattr(original, staged.Name(), name) {
