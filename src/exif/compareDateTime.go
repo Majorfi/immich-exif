@@ -42,12 +42,11 @@ func CompareDateTime(exif *model.ExifInfo, existing ExifTagMap) *TagChange {
 	}
 
 	existingHasDate := existing != nil && existing["DateTimeOriginal"] != nil
-	existingHasOffset := existing != nil && (existing["OffsetTimeOriginal"] != nil || existing["TimeZoneOffset"] != nil)
-
 	existingDate, _ := existing["DateTimeOriginal"].(string)
+	existingHasOffset := existing != nil && (existing["OffsetTimeOriginal"] != nil || existing["TimeZoneOffset"] != nil || HasInlineOffset(existingDate))
 	var tc *TagChange
 	if existingHasDate && !existingHasOffset && (loc == nil || sameWallClock(existingDate, immichTime)) {
-		tc = compareDateTimeMissingOffset(existing, immichTime, expected)
+		tc = compareDateTimeMissingOffset(existing, immichTime, expected, loc != nil)
 	} else {
 		tc = compareDateTimeFull(existing, immichTime, expected, loc != nil)
 	}
@@ -73,10 +72,10 @@ func appendXMPDateArgs(tc *TagChange, isoDate string, existing ExifTagMap) {
 	}
 }
 
-func compareDateTimeMissingOffset(existing ExifTagMap, immichTime time.Time, expected string) *TagChange {
+func compareDateTimeMissingOffset(existing ExifTagMap, immichTime time.Time, expected string, anchored bool) *TagChange {
 	offsetStr, tzHours, hasWholeHour, canInfer := DeriveOffsetValuesForMissingOffset(existing, expected)
 	if !canInfer {
-		return compareDateTimeFull(existing, immichTime, expected, false)
+		return compareDateTimeFull(existing, immichTime, expected, anchored)
 	}
 
 	tc := &TagChange{}
@@ -108,7 +107,10 @@ func compareDateTimeFull(existing ExifTagMap, immichTime time.Time, expected str
 	if anchored && momentMatches {
 		offsetText, hasOffsetText := oldOffset.(string)
 		fileTZHours, hasTZHours := oldTZOffset.(float64)
-		momentMatches = (hasOffsetText && strings.TrimSpace(offsetText) == offsetStr) || (!hasOffsetText && hasTZHours && int(fileTZHours)*3600 == offsetSeconds)
+		inlineDate, _ := oldVal.(string)
+		momentMatches = (hasOffsetText && offsetTextSeconds(offsetText) == offsetSeconds && validOffsetText(offsetText)) ||
+			(!hasOffsetText && hasTZHours && int(fileTZHours)*3600 == offsetSeconds) ||
+			(!hasOffsetText && !hasTZHours && inlineOffsetSeconds(inlineDate) == offsetSeconds && HasInlineOffset(inlineDate))
 	}
 
 	tc := &TagChange{}
@@ -145,4 +147,36 @@ func compareDateTimeFull(existing ExifTagMap, immichTime time.Time, expected str
 func sameWallClock(existing string, t time.Time) bool {
 	parsed, err := ParseDateTime(strings.TrimSpace(existing))
 	return err == nil && parsed.Format("2006-01-02 15:04:05") == t.Format("2006-01-02 15:04:05")
+}
+
+func HasInlineOffset(date string) bool {
+	date = strings.TrimSpace(date)
+	if strings.HasSuffix(date, "Z") {
+		return true
+	}
+	n := len(date)
+	return n >= 6 && (date[n-6] == '+' || date[n-6] == '-') && date[n-3] == ':'
+}
+
+func inlineOffsetSeconds(date string) int {
+	parsed, err := ParseDateTime(strings.TrimSpace(date))
+	if err != nil {
+		return 0
+	}
+	_, offset := parsed.Zone()
+	return offset
+}
+
+func validOffsetText(text string) bool {
+	_, err := time.Parse("Z07:00", strings.TrimSpace(text))
+	return err == nil
+}
+
+func offsetTextSeconds(text string) int {
+	parsed, err := time.Parse("Z07:00", strings.TrimSpace(text))
+	if err != nil {
+		return 0
+	}
+	_, offset := parsed.Zone()
+	return offset
 }

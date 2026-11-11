@@ -2,6 +2,7 @@ package exif
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/majorfi/immich-exif/model"
@@ -26,7 +27,7 @@ func TestCompareDateTimeOnlyAddsTheOffsetWhenTheWallClockMatches(t *testing.T) {
 		t.Fatalf("expected Immich's offset added, got %v", args)
 	}
 	for _, arg := range args {
-		if len(arg) > 18 && arg[:18] == "-DateTimeOriginal=" {
+		if strings.HasPrefix(arg, "-DateTimeOriginal=") {
 			t.Fatalf("a matching wall clock must not be rewritten, got %v", args)
 		}
 	}
@@ -54,5 +55,35 @@ func TestCompareDateTimeKeepsAFileAnchoredOnImmichZone(t *testing.T) {
 	}
 	if args := CollectExifArgs(CompareMetadata(&model.ExifInfo{DateTimeOriginal: &dt, TimeZone: &zone}, existing)); len(args) != 0 {
 		t.Fatalf("a file already in Immich's zone must not be rewritten, got %v", args)
+	}
+}
+
+func TestCompareDateTimeTreatsAnInlineOffsetAsAnOffset(t *testing.T) {
+	dt := "2021-05-06T09:08:09+00:00"
+	existing := ExifTagMap{
+		"DateTimeOriginal":          "2021:05:06 19:08:09+10:00",
+		"XMP-exif:DateTimeOriginal": "2021:05:06 19:08:09+10:00",
+		"XMP-xmp:CreateDate":        "2021:05:06 19:08:09+10:00",
+	}
+	if args := CollectExifArgs(CompareMetadata(&model.ExifInfo{DateTimeOriginal: &dt}, existing)); len(args) != 0 {
+		t.Fatalf("without a zone, a date carrying its own offset at the right instant must be kept, got %v", args)
+	}
+	zone := "UTC+10"
+	if args := CollectExifArgs(CompareMetadata(&model.ExifInfo{DateTimeOriginal: &dt, TimeZone: &zone}, existing)); len(args) != 0 {
+		t.Fatalf("a date whose inline offset is Immich's zone must be kept, got %v", args)
+	}
+}
+
+func TestCompareDateTimeReadsAZuluOffsetTag(t *testing.T) {
+	dt, zone := "2021-05-06T09:08:09+00:00", "UTC"
+	existing := ExifTagMap{
+		"DateTimeOriginal":          "2021:05:06 09:08:09",
+		"OffsetTimeOriginal":        "Z",
+		"TimeZoneOffset":            float64(0),
+		"XMP-exif:DateTimeOriginal": "2021:05:06 09:08:09Z",
+		"XMP-xmp:CreateDate":        "2021:05:06 09:08:09Z",
+	}
+	if args := CollectExifArgs(CompareMetadata(&model.ExifInfo{DateTimeOriginal: &dt, TimeZone: &zone}, existing)); len(args) != 0 {
+		t.Fatalf("Z is UTC's offset and must match, got %v", args)
 	}
 }

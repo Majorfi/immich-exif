@@ -290,3 +290,16 @@ func TestSidecarDisagreementJudgesDatesByInstant(t *testing.T) {
 		t.Fatalf("a sidecar date at the same instant in another offset leaves Immich's date unchanged and must pass, got %q", note)
 	}
 }
+
+func TestSidecarDateHonoursASeparateOffsetTag(t *testing.T) {
+	date, zone := "2021-05-06T09:08:09+00:00", "UTC+10"
+	asset := model.AssetResponse{ExifInfo: &model.ExifInfo{DateTimeOriginal: &date, TimeZone: &zone}}
+	shifted := exif.ExifTagMap{"DateTimeOriginal": "2021:05:06 19:08:09", "OffsetTimeOriginal": "+02:00"}
+	if note := sidecarDisagreement(&model.Config{}, asset, shifted); note == "" {
+		t.Fatal("a separate offset tag moves the instant Immich reads and must be taken into account")
+	}
+	matching := exif.ExifTagMap{"DateTimeOriginal": "2021:05:06 19:08:09", "OffsetTimeOriginal": "+10:00"}
+	if note := sidecarDisagreement(&model.Config{}, asset, matching); note != "" {
+		t.Fatalf("a matching separate offset must pass, got %q", note)
+	}
+}
