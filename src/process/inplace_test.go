@@ -22,6 +22,8 @@ type inPlaceServer struct {
 	gets            int
 	ignoreRefreshes int
 	refreshRequests int
+	sidecarsStatus  int
+	refreshStatus   int
 }
 
 func (s *inPlaceServer) handler(t *testing.T) http.HandlerFunc {
@@ -31,12 +33,21 @@ func (s *inPlaceServer) handler(t *testing.T) http.HandlerFunc {
 		case r.URL.Path == "/api/assets/asset-1/original":
 			_, _ = w.Write([]byte(s.served))
 		case r.URL.Path == "/api/asset-files":
+			if s.sidecarsStatus != 0 {
+				w.WriteHeader(s.sidecarsStatus)
+				_, _ = w.Write([]byte(`{"message":"no"}`))
+				return
+			}
 			sidecars := s.sidecars
 			if sidecars == "" {
 				sidecars = "[]"
 			}
 			_, _ = w.Write([]byte(sidecars))
 		case r.URL.Path == "/api/assets/jobs" && r.Method == http.MethodPost:
+			if s.refreshStatus != 0 {
+				w.WriteHeader(s.refreshStatus)
+				return
+			}
 			s.refreshRequests++
 			s.refreshed = s.refreshRequests > s.ignoreRefreshes
 			w.WriteHeader(http.StatusNoContent)
@@ -310,5 +321,50 @@ func TestSidecarSeparateOffsetOnlyDescribesDateTimeOriginal(t *testing.T) {
 	tags := exif.ExifTagMap{"DateTimeUTC": "2025:12:10 15:56:36", "OffsetTimeOriginal": "+01:00"}
 	if note := sidecarDisagreement(&model.Config{}, asset, tags); note != "" {
 		t.Fatalf("OffsetTimeOriginal does not apply to DateTimeUTC, got %q", note)
+	}
+}
+
+func TestInPlaceSidecarListingFailures(t *testing.T) {
+	cases := map[string]struct {
+		state  *inPlaceServer
+		status model.ResultStatus
+		want   string
+	}{
+		"server before 3.2":   {&inPlaceServer{served: "original bytes", sidecarsStatus: http.StatusNotFound}, model.StatusSkipped, "Immich 3.2"},
+		"missing permission":  {&inPlaceServer{served: "original bytes", sidecarsStatus: http.StatusForbidden}, model.StatusFailed, "asset.file.read"},
+		"sidecar outside map": {&inPlaceServer{served: "original bytes", sidecars: `[{"path":"/elsewhere/ext1.jpg.xmp"}]`}, model.StatusSkipped, "outside the mapped paths"},
+	}
+	for name, tc := range cases {
+		root, local := inPlaceLibrary(t, "original bytes")
+		result := runInPlace(t, tc.state, root, appendTags)
+		if result.Status != tc.status || !strings.Contains(result.Message, tc.want) {
+			t.Fatalf("%s: got %+v", name, result)
+		}
+		if data, _ := os.ReadFile(local); string(data) != "original bytes" {
+			t.Fatalf("%s: the library file must stay untouched", name)
+		}
+	}
+}
+
+func TestInPlaceReportsARefusedRefresh(t *testing.T) {
+	root, local := inPlaceLibrary(t, "original bytes")
+	result := runInPlace(t, &inPlaceServer{served: "original bytes", refreshStatus: http.StatusForbidden}, root, appendTags)
+	if result.Status != model.StatusFailed || !strings.Contains(result.Message, "job.create") {
+		t.Fatalf("expected a permission hint after the write, got %+v", result)
+	}
+	if data, _ := os.ReadFile(local); string(data) != "original bytes+tags" {
+		t.Fatalf("the write itself happened before the refresh was refused: %q", data)
+	}
+}
+
+func TestResolveInPlaceRefusesAContentChecksum(t *testing.T) {
+	root, _ := inPlaceLibrary(t, "x")
+	cfg := &model.Config{InPlaceMaps: []model.PathMapping{{Server: "/mnt/external", Local: root}}}
+	asset := model.AssetResponse{OriginalPath: "/mnt/external/sub/ext1.jpg", Checksum: sha1HexOf("x"), LibraryID: "library-1"}
+	if _, note := resolveInPlace(cfg, asset); !strings.Contains(note, "checksum stale") {
+		t.Fatalf("a content checksum would go stale and must be refused, got %q", note)
+	}
+	if target, note := resolveInPlace(cfg, model.AssetResponse{OriginalPath: "/other/a.jpg"}); target.local != "" || note != "" {
+		t.Fatal("an unmapped path resolves to nothing")
 	}
 }

@@ -80,3 +80,20 @@ func TestCompareVideoDateTimeAddsTheOffsetToAWallClockDate(t *testing.T) {
 		t.Fatal("a video date without an offset must get Immich's offset, or Immich reads it back as UTC")
 	}
 }
+
+func TestReadImmichDate(t *testing.T) {
+	date, zone := "2025-12-10T15:56:36Z", "UTC+1"
+	info := &model.ExifInfo{DateTimeOriginal: &date, TimeZone: &zone}
+	tags := ExifTagMap{"OffsetTimeOriginal": "+01:00"}
+	read, same := ReadImmichDate(info, tags, "DateTimeOriginal", "2025:12:10 16:56:36")
+	if read != "2025:12:10 16:56:36+01:00" || !same {
+		t.Fatalf("DateTimeOriginal takes its separate offset: got %q %v", read, same)
+	}
+	read, same = ReadImmichDate(info, tags, "CreateDate", "2025:12:10 16:56:36")
+	if read != "2025:12:10 16:56:36" || !same {
+		t.Fatalf("other date tags are read as they are: got %q %v", read, same)
+	}
+	if _, same := ReadImmichDate(&model.ExifInfo{}, tags, "DateTimeOriginal", "2025:12:10 16:56:36"); same {
+		t.Fatal("without an Immich date nothing matches")
+	}
+}
