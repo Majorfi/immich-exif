@@ -2,6 +2,7 @@ package exif
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/majorfi/immich-exif/model"
 )
@@ -104,24 +105,19 @@ func compareVideoDateTime(exif *model.ExifInfo, existing ExifTagMap) *TagChange 
 	}
 
 	expected := *exif.DateTimeOriginal
-	if DateTimeStringMatch(existing["DateTimeOriginal"], expected) &&
-		DateTimeStringMatch(existing["XMP-exif:DateTimeOriginal"], expected) &&
-		DateTimeStringMatch(existing["XMP-xmp:CreateDate"], expected) {
-		return nil
+	anchored := false
+	if t, ok := CorrectedLocalTime(exif); ok && resolveImmichLocation(exif.TimeZone) != nil {
+		expected, anchored = t.Format("2006-01-02T15:04:05.999-07:00"), true
 	}
 
 	change := &TagChange{}
-	if !DateTimeStringMatch(existing["DateTimeOriginal"], expected) {
-		change.Args = append(change.Args, fmt.Sprintf("-DateTimeOriginal=%s", expected))
-		change.Diffs = appendDateTimeDiff(change.Diffs, "DateTimeOriginal", existing["DateTimeOriginal"], expected)
-	}
-	if !DateTimeStringMatch(existing["XMP-exif:DateTimeOriginal"], expected) {
-		change.Args = append(change.Args, fmt.Sprintf("-XMP-exif:DateTimeOriginal=%s", expected))
-		change.Diffs = appendDateTimeDiff(change.Diffs, "XMP-exif:DateTimeOriginal", existing["XMP-exif:DateTimeOriginal"], expected)
-	}
-	if !DateTimeStringMatch(existing["XMP-xmp:CreateDate"], expected) {
-		change.Args = append(change.Args, fmt.Sprintf("-XMP-xmp:CreateDate=%s", expected))
-		change.Diffs = appendDateTimeDiff(change.Diffs, "XMP-xmp:CreateDate", existing["XMP-xmp:CreateDate"], expected)
+	for _, tag := range []string{"DateTimeOriginal", "XMP-exif:DateTimeOriginal", "XMP-xmp:CreateDate"} {
+		value, _ := existing[tag].(string)
+		if DateTimeStringMatch(existing[tag], expected) && (!anchored || sameOffset(value, expected)) {
+			continue
+		}
+		change.Args = append(change.Args, fmt.Sprintf("-%s=%s", tag, expected))
+		change.Diffs = appendStringDiff(change.Diffs, tag, existing[tag], expected)
 	}
 	if len(change.Args) == 0 {
 		return nil
@@ -129,8 +125,16 @@ func compareVideoDateTime(exif *model.ExifInfo, existing ExifTagMap) *TagChange 
 	return change
 }
 
-func appendDateTimeDiff(diffs []model.DiffEntry, tag string, existing any, expected string) []model.DiffEntry {
-	return appendDiff(diffs, tag, existing, expected, func(existing any, expected string) bool {
-		return DateTimeStringMatch(existing, expected)
-	})
+func sameOffset(existing, expected string) bool {
+	existingTime, err := ParseDateTime(strings.TrimSpace(existing))
+	if err != nil {
+		return false
+	}
+	expectedTime, err := ParseDateTime(expected)
+	if err != nil {
+		return false
+	}
+	_, existingOffset := existingTime.Zone()
+	_, expectedOffset := expectedTime.Zone()
+	return existingOffset == expectedOffset
 }
