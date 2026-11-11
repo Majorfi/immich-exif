@@ -367,7 +367,7 @@ func TestCopyAssetSendsCorrectPayload(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "test-key")
-	if err := c.CopyAsset("src", "dst"); err != nil {
+	if err := c.CopyAsset("src", "dst", true); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -386,7 +386,7 @@ func TestCopyAssetAlwaysUsesPut(t *testing.T) {
 
 	c := NewImmichClient(server.URL, "test-key")
 	c.apiV3 = true
-	if err := c.CopyAsset("src", "dst"); err != nil {
+	if err := c.CopyAsset("src", "dst", true); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -505,7 +505,7 @@ func TestCopyAssetError(t *testing.T) {
 	defer server.Close()
 
 	c := NewImmichClient(server.URL, "key")
-	err := c.CopyAsset("src", "dst")
+	err := c.CopyAsset("src", "dst", true)
 	if err == nil {
 		t.Fatal("expected error")
 	}

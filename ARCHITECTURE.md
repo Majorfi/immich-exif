@@ -5,14 +5,18 @@
 The tool uses a verify-before-delete process:
 
 1. **GET /assets/{id}** — Re-fetch the asset right before upload; if `updatedAt` changed since the initial scan (metadata edited server-side mid-run), the asset is skipped so a re-run picks up the fresh state
-2. **POST /assets** — Upload the modified file as a new asset (forwarding `livePhotoVideoId` so live-photo pairs survive)
-3. **GET /assets/{id}** — By default, re-fetch the new asset and verify its stored checksum matches the local file. A mismatch aborts before any delete, leaving the original intact. Skipped with `-no-verify-upload`.
-4. **PUT /assets/copy** — Copy all associations (albums, favorites, shared links, sidecars, stacks) from old to new (no PATCH alias exists for this endpoint on v3.0.1)
-5. **GET /assets/{id}** + **PATCH /stacks/{id}** (PUT on legacy servers) — Promote the replacement if it takes a stack primary's place
-6. **PATCH /assets** (PUT on legacy servers) — Restore visibility if the original was archived or had non-default visibility
-7. **DELETE /assets** — Move the original to Immich's trash (`force=false`, recoverable). The delete is never permanent: checksum verification proves the transfer, not exiftool's output, so the trash window is kept as the recovery path.
+2. **GET /assets/{id}/edits** — For an asset edited in Immich's editor (crop, rotate, mirror), read the edits before uploading anything; skipped when they are baked into the file (`-apply-edits`)
+3. **POST /assets** — Upload the modified file as a new asset (forwarding `livePhotoVideoId` so live-photo pairs survive)
+4. **GET /assets/{id}** — By default, re-fetch the new asset and verify its stored checksum matches the local file. A mismatch aborts before any delete, leaving the original intact. Skipped with `-no-verify-upload`.
+5. **PUT /assets/{id}/edits** — Re-apply the edits read in step 2 to the replacement, since `/assets/copy` does not carry them. Immich validates a crop against the asset's extracted dimensions, so the new asset is polled until metadata extraction has filled them in. The replacement must resolve the same orientation as the original (a sidecar that alone rotates the original would put the crop on other coordinates), and the applied edits are compared with the original's before going on.
+6. **PUT /assets/copy** — Copy all associations (albums, favorites, shared links, sidecars, stacks) from old to new (no PATCH alias exists for this endpoint on v3.0.1)
+7. **GET /assets/{id}** + **PATCH /stacks/{id}** (PUT on legacy servers) — Promote the replacement if it takes a stack primary's place
+8. **PATCH /assets** (PUT on legacy servers) — Restore visibility if the original was archived or had non-default visibility
+9. **DELETE /assets** — Move the original to Immich's trash (`force=false`, recoverable). The delete is never permanent: checksum verification proves the transfer, not exiftool's output, so the trash window is kept as the recovery path.
 
-Step 5 prevents a trashed primary from hiding its stack (issue #34). It runs before visibility restoration and deletion. `-repair-stacks` fixes existing stacks.
+Step 7 prevents a trashed primary from hiding its stack (issue #34). It runs before visibility restoration and deletion. `-repair-stacks` fixes existing stacks.
+
+With `-apply-edits`, an edited image is baked instead: the original is downloaded (checksum-verified, as the metadata source) along with Immich's render (`GET /assets/{id}/original?edited=true`). The render is already oriented, cropped, rotated and mirrored, and carries no EXIF. Immich serves the original instead when no render exists, so bytes matching the original's checksum are refused. While a new render is generated, Immich keeps serving the previous one, and no API reports which edits a render belongs to. Three guards cover that window. An asset whose `updatedAt` is less than a minute old on the server's clock (`Date` header of `/server/ping`) is skipped, since every edit and every finished render bumps it. The render's pixel size must equal the size the current edits produce on the server's oriented dimensions (crop size, axes swapped by a quarter turn), mirroring Immich's `getOutputDimensions`. And the render's content is checked against the unedited preview (`GET /assets/{id}/thumbnail?size=preview&edited=false`): a 24×24 grid of the render is mapped back through the edits (Immich applies them in list order after the crop; `rotate` turns clockwise, a `horizontal` mirror flips left-right) onto the preview, and the mean colour difference must stay under 12 (0-255), with none of the seven other orientations fitting clearly better. Measured on real renders, a current render scores 0.2-0.3 (6 on pure noise) and a stale mirror or turn 19-83; a live stale render, produced by pausing Immich's editor queue, scored 73.8 and was refused. JPEG XL renders cannot be decoded and are skipped. The original's metadata is copied onto the render without the tags that describe the original's pixels, and the render then goes through the normal diff, write and replace path. Face boxes need no remapping: for an edited asset, `GET /api/faces` already returns them on the edited image. A baked replacement is copied without the sidecar (`sidecar: false` on `/assets/copy`). Immich merges sidecar tags over the file's, and a foreign sidecar's orientation, dimensions (`tiff:ImageWidth`, verified live: a 800x500 bake registered as 1200x800 with its sidecar) or regions describe the pre-edit image; no endpoint serves a sidecar, so it cannot be cleaned and kept. Immich's tags, which otherwise survive a replace through that sidecar, are written into the file as `XMP-digiKam:TagsList` (the list Immich's importer reads first), and the pre-upload re-check skips the asset if they changed mid-run, since tag changes do not bump `updatedAt`. A duplicate resolution onto an asset carrying edits the replacement would not reproduce is refused, and an `-apply-edits` run refuses to start unless the server confirms its trash is enabled.
 
 `writeMethod()` uses PATCH on v3+ and PUT on legacy servers. `/assets/copy` always uses PUT.
 
@@ -82,6 +86,7 @@ src/
     events.go         Event types and EventEmitter interface
     assetType.go      Asset classification (video detection, live-photo motion)
     people.go         Person/face types, named-people helpers
+    edits.go          Editor edit types, edited-size and description helpers
     checksum.go       SHA-1 checksum decoding (base64/hex)
     helpers.go        ShortID, TruncateFilename, SanitizeForTerminal
 
@@ -97,6 +102,8 @@ src/
     client.go         HTTP client base (transport, redirects, API version detection)
     assets.go         Asset CRUD (get, download, upload, copy, delete)
     faces.go          Face boxes for one asset
+    edits.go          Immich editor edits and the edited render
+    download.go       Streamed, watchdog-guarded downloads
     search.go         Search, list albums, paginated asset listing
 
   state/
@@ -105,6 +112,9 @@ src/
   process/
     pipeline.go       Per-asset processing orchestration
     faces.go          Face-region change collection (-faces)
+    edits.go          Baking edits (-apply-edits) and carrying them to replacements
+    renderCheck.go    Checks an edited render's content against the unedited preview
+    export.go         Export-mode file copies
     worker.go         Worker pool with cancellation
     uploader.go       Upload interface and ModernUploader
     verify.go         Post-upload checksum verification
@@ -116,18 +126,20 @@ src/
 
 ## Immich API endpoints used
 
-| Method      | Endpoint                    | Purpose                                                      |
-| ----------- | --------------------------- | ------------------------------------------------------------ |
-| GET         | `/api/server/about`         | Server version detection (best-effort in forced modes)       |
-| GET         | `/api/assets/{id}`          | Fetch asset metadata and EXIF                                |
-| GET         | `/api/assets/{id}/original` | Download original file                                       |
-| GET         | `/api/faces`                | Face boxes for one asset (only with `-faces`)                |
-| POST        | `/api/assets`               | Upload new asset (multipart)                                 |
-| PATCH / PUT | `/api/assets`               | Update asset visibility (PATCH on v3+, PUT on legacy)        |
-| PUT         | `/api/assets/copy`          | Copy associations between assets (no PATCH alias on v3)      |
-| DELETE      | `/api/assets`               | Batch delete assets (always `force=false`, trash)            |
-| POST        | `/api/search/metadata`      | Paginated asset listing + album enumeration (per visibility) |
-| GET         | `/api/albums`               | List all albums                                              |
-| GET         | `/api/albums/{id}`          | Get album with asset list                                    |
+| Method      | Endpoint                                | Purpose                                                      |
+| ----------- | --------------------------------------- | ------------------------------------------------------------ |
+| GET         | `/api/server/about`                     | Server version detection (best-effort in forced modes)       |
+| GET         | `/api/assets/{id}`                      | Fetch asset metadata and EXIF                                |
+| GET         | `/api/assets/{id}/original`             | Download original file                                       |
+| GET         | `/api/assets/{id}/original?edited=true` | Download Immich's edited render (only with `-apply-edits`)   |
+| GET / PUT   | `/api/assets/{id}/edits`                | Read edits; re-apply them to the replacement                 |
+| GET         | `/api/faces`                            | Face boxes for one asset (only with `-faces`)                |
+| POST        | `/api/assets`                           | Upload new asset (multipart)                                 |
+| PATCH / PUT | `/api/assets`                           | Update asset visibility (PATCH on v3+, PUT on legacy)        |
+| PUT         | `/api/assets/copy`                      | Copy associations between assets (no PATCH alias on v3)      |
+| DELETE      | `/api/assets`                           | Batch delete assets (always `force=false`, trash)            |
+| POST        | `/api/search/metadata`                  | Paginated asset listing + album enumeration (per visibility) |
+| GET         | `/api/albums`                           | List all albums                                              |
+| GET         | `/api/albums/{id}`                      | Get album with asset list                                    |
 
 All requests are authenticated via `x-api-key` header. v3 is the primary API contract: version detection assumes v3 when the reported version is unrecognizable, and `-immich-api legacy` forces the older contract. Redirects that leave the configured host (or downgrade https to http) are refused so the key cannot leak.

@@ -11,7 +11,7 @@ import (
 )
 
 func wantsFaceRegions(cfg *model.Config, asset model.AssetResponse) bool {
-	return cfg.Faces && model.HasFaceRegionsToEmbed(asset)
+	return cfg.Faces && model.HasFaceRegionsToEmbed(asset) && (!asset.IsEdited || cfg.BakesEdits(asset))
 }
 
 // appendFaceRegionChange fetches the asset's face boxes and appends the
@@ -35,6 +35,9 @@ func appendFaceRegionChange(client *api.ImmichClient, cfg *model.Config, asset m
 			return changes, nil, "this video container cannot hold face regions", nil
 		}
 		return changes, nil, "Immich lists no named, visible person on this asset", nil
+	}
+	if asset.IsEdited && !cfg.BakesEdits(asset) {
+		return changes, nil, "Immich edits place face boxes on the edited image, not the original; add -apply-edits to bake them together", nil
 	}
 	orientation, ok := regionOrientation(asset, existing)
 	if !ok {

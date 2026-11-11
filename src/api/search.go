@@ -82,8 +82,9 @@ func (c *ImmichClient) forEachSearchPage(albumIDs []string, withExif, withPeople
 // external-library asset would migrate it into the internal library, so those
 // are only eligible for the read-only modes (dry-run, export). withFaces
 // makes the search return people so an asset whose only writable metadata is
-// its named faces survives the pre-filter.
-func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool, skipExternalLibrary, withFaces bool) ([]string, AssetSelectionStats, error) {
+// its named faces survives the pre-filter. withEdits keeps edited assets so
+// -apply-edits can bake them even when their metadata already matches.
+func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool, skipExternalLibrary, withFaces, withEdits bool) ([]string, AssetSelectionStats, error) {
 	var allIDs []string
 	stats := AssetSelectionStats{}
 	seen := map[string]bool{}
@@ -106,7 +107,7 @@ func (c *ImmichClient) ListAllAssetIDs(shouldSkip func(model.AssetResponse) bool
 				stats.UnsupportedVideoSkipped++
 				continue
 			}
-			if !exif.HasAssetMetadataToEmbed(asset) && !(withFaces && model.HasFaceRegionsToEmbed(asset)) {
+			if !exif.HasAssetMetadataToEmbed(asset) && !(withFaces && model.HasFaceRegionsToEmbed(asset) && !asset.IsEdited) && !(withEdits && asset.IsEdited) {
 				stats.NoWritableMetadataSkipped++
 				continue
 			}

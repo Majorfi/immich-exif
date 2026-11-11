@@ -3,9 +3,9 @@ package process
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -57,11 +57,21 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	if model.IsUnsupportedVideoAsset(*asset) {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "unsupported video container for metadata embedding"}
 	}
-	if len(exif.CollectExifArgs(exif.CompareAssetMetadata(*asset, nil))) == 0 && !wantsFaceRegions(cfg, *asset) {
+	if len(exif.CollectExifArgs(exif.CompareAssetMetadata(*asset, nil))) == 0 && !wantsFaceRegions(cfg, *asset) && !cfg.BakesEdits(*asset) {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "no metadata to embed"}
 	}
 	if strings.TrimSpace(asset.Checksum) == "" {
 		return fail("server returned no checksum for this asset; refusing to replace without integrity verification")
+	}
+
+	plan := bakePlan{}
+	if cfg.BakesEdits(*asset) {
+		if plan, err = planBake(client, *asset); err != nil {
+			return fail("apply edits: %v", err)
+		}
+		if plan.skipNote != "" {
+			return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: plan.skipNote}
+		}
 	}
 
 	assetDir, err := os.MkdirTemp(cfg.TmpDir, assetID+"-*")
@@ -82,20 +92,40 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 		return fail("download: %v", err)
 	}
 
-	stepProgress("Analyzing "+displayName+"...", 0)
+	baked := bakedFile{}
 	var existing exif.ExifTagMap
-	existing, err = exif.ReadExifTagsFn(filePath)
-	if err != nil {
-		return fail("read exif: %v", err)
+	if cfg.BakesEdits(*asset) {
+		stepProgress("Downloading edited "+displayName+"...", 0)
+		baked, err = bakeEdits(client, *asset, plan, filePath, func(percent int) {
+			stepProgress("Downloading edited "+displayName+"...", percent)
+		})
+		if err != nil {
+			return fail("apply edits: %v", err)
+		}
+		if baked.skipNote != "" {
+			return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: baked.skipNote}
+		}
+		filePath, safeName, existing = baked.path, filepath.Base(baked.path), baked.tags
+	} else {
+		stepProgress("Analyzing "+displayName+"...", 0)
+		existing, err = exif.ReadExifTagsFn(filePath)
+		if err != nil {
+			return fail("read exif: %v", err)
+		}
 	}
 
 	changes := exif.CompareAssetMetadata(*asset, existing)
+	if baked.path != "" {
+		if tags := bakedTagsChange(*asset, existing); tags != nil {
+			changes = append(changes, *tags)
+		}
+	}
 	changes, faceRegions, faceSkip, err := appendFaceRegionChange(client, cfg, *asset, existing, changes)
 	if err != nil {
 		return fail("fetch faces: %v", err)
 	}
 	exifArgs := exif.CollectExifArgs(changes)
-	if len(exifArgs) == 0 {
+	if len(exifArgs) == 0 && baked.path == "" {
 		message := "metadata already matches"
 		if faceSkip != "" {
 			message += "; no face regions written: " + faceSkip
@@ -108,6 +138,9 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	// -y run still prints, so "-faces wrote nothing" is never silent.
 	if faceSkip != "" {
 		diffEntries = append(diffEntries, model.DiffEntry{Tag: "Face regions", Symbol: model.DiffChange, Old: "(skipped)", New: faceSkip})
+	}
+	if baked.path != "" {
+		diffEntries = append(diffEntries, model.DiffEntry{Tag: "Immich edits", Symbol: model.DiffChange, Old: "(Immich only)", New: "baked into the file: " + baked.edits})
 	}
 	action := emitter.EmitDiff(model.DiffEvent{
 		AssetID:  assetID,
@@ -124,9 +157,11 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusFailed, Message: "user cancelled", Cancelled: true}
 	}
 
-	stepProgress("Writing tags to "+displayName+"...", 0)
-	if err := exif.WriteExifTagsFn(filePath, exifArgs); err != nil {
-		return fail("write exif: %v", err)
+	if len(exifArgs) > 0 {
+		stepProgress("Writing tags to "+displayName+"...", 0)
+		if err := exif.WriteExifTagsFn(filePath, exifArgs); err != nil {
+			return fail("write exif: %v", err)
+		}
 	}
 
 	if cfg.DryRun {
@@ -173,6 +208,9 @@ func ProcessAsset(client *api.ImmichClient, uploader Uploader, cfg *model.Config
 	}
 	if !fresh.UpdatedAt.Equal(asset.UpdatedAt) {
 		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "asset changed on the server while processing; re-run to pick up the latest metadata"}
+	}
+	if baked.path != "" && !slices.Equal(tagValues(*fresh), tagValues(*asset)) {
+		return model.ProcessResult{AssetID: assetID, Status: model.StatusSkipped, Message: "tags changed on the server while processing; re-run to pick up the latest state"}
 	}
 	// Face edits (renames, box moves, reassignments) do not bump updatedAt, so
 	// the regions we are about to embed get their own freshness check. Skip it
@@ -259,65 +297,4 @@ func safePathComponent(kind, value string) (string, error) {
 		return "", fmt.Errorf("unsafe %s: %q", kind, value)
 	}
 	return base, nil
-}
-
-// errDestExists is returned (wrapped) by copyFile when the destination already
-// exists, so copyFileToDir can distinguish a name clash from a real I/O error.
-var errDestExists = errors.New("destination exists")
-
-// copyFileToDir copies src into dir under baseName. When allowSuffix is set and
-// baseName is taken, it inserts "-NNN" before the extension until it finds a
-// free name; the O_EXCL create makes each claim atomic, so parallel workers
-// exporting distinct assets that share a timestamp never overwrite each other.
-// It returns the path actually written.
-func copyFileToDir(src, dir, baseName string, allowSuffix bool) (string, error) {
-	dest := filepath.Join(dir, baseName)
-	err := copyFile(src, dest)
-	if err == nil {
-		return dest, nil
-	}
-	if !allowSuffix || !errors.Is(err, errDestExists) {
-		return "", err
-	}
-
-	ext := filepath.Ext(baseName)
-	stem := strings.TrimSuffix(baseName, ext)
-	for i := 1; i < 1000; i++ {
-		candidate := filepath.Join(dir, fmt.Sprintf("%s-%03d%s", stem, i, ext))
-		err := copyFile(src, candidate)
-		if err == nil {
-			return candidate, nil
-		}
-		if !errors.Is(err, errDestExists) {
-			return "", err
-		}
-	}
-	return "", fmt.Errorf("no free name for %q after 999 suffixes", baseName)
-}
-
-func copyFile(src, dst string) error {
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	dstFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("%w: %s", errDestExists, dst)
-		}
-		return err
-	}
-
-	if _, err := io.Copy(dstFile, srcFile); err != nil {
-		dstFile.Close()
-		os.Remove(dst)
-		return err
-	}
-	if err := dstFile.Close(); err != nil {
-		os.Remove(dst)
-		return err
-	}
-	return nil
 }
